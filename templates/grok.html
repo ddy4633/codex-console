@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grok 注册控制台</title>
+    <link rel="stylesheet" href="/static/css/style.css?v={{ static_version }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+    <style>
+        .two-column-layout {
+            display: grid;
+            grid-template-columns: 32% 68%;
+            gap: var(--spacing-lg);
+            align-items: start;
+        }
+        .left-panel {
+            position: sticky;
+            top: calc(60px + var(--spacing-lg));
+        }
+        .right-panel {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-lg);
+        }
+        .task-status-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--spacing-sm);
+            padding: var(--spacing-md);
+            background: var(--surface-hover);
+            border-radius: var(--radius);
+            margin-bottom: var(--spacing-md);
+        }
+        .task-status-item {
+            text-align: center;
+        }
+        .task-status-item .label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .task-status-item .value {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+        .recent-accounts-table {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .recent-accounts-table table {
+            width: 100%;
+        }
+        .recent-accounts-table th,
+        .recent-accounts-table td {
+            padding: var(--spacing-sm) var(--spacing-md);
+            font-size: 0.8125rem;
+        }
+        .log-note {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            margin-top: var(--spacing-xs);
+        }
+        @media (max-width: 1024px) {
+            .two-column-layout {
+                grid-template-columns: 1fr;
+            }
+            .left-panel {
+                position: static;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav class="navbar">
+            <div class="nav-brand">
+                <h1>OpenAI 注册系统</h1>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">注册</a>
+                <a href="/grok" class="nav-link active">Grok</a>
+                <a href="/accounts" class="nav-link">账号管理</a>
+                <a href="/email-services" class="nav-link">邮箱服务</a>
+                <a href="/payment" class="nav-link">支付</a>
+                <a href="/settings" class="nav-link">设置</a>
+                <a href="/logout" class="nav-link">退出</a>
+            </div>
+            <button class="theme-toggle" onclick="theme.toggle()" title="切换主题">🌙</button>
+        </nav>
+
+        <main class="main-content">
+            <div class="two-column-layout">
+                <div class="left-panel">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>⚡ Grok 注册</h3>
+                        </div>
+                        <div class="card-body">
+                            <form id="grok-form">
+                                <div class="form-group">
+                                    <label for="email-service">邮箱服务</label>
+                                    <select id="email-service" name="email_service" required></select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="reg-mode">执行模式</label>
+                                    <select id="reg-mode" name="reg_mode">
+                                        <option value="single">单次注册</option>
+                                        <option value="batch">批量注册</option>
+                                    </select>
+                                </div>
+
+                                <div id="batch-count-group" class="form-group" style="display:none;">
+                                    <label for="batch-count">注册数量</label>
+                                    <input type="number" id="batch-count" min="1" max="100" value="3">
+                                </div>
+
+                                <div id="batch-options" style="display:none;">
+                                    <div class="form-group">
+                                        <label for="interval-min">最小间隔（秒）</label>
+                                        <input type="number" id="interval-min" min="0" max="600" value="20">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="interval-max">最大间隔（秒）</label>
+                                        <input type="number" id="interval-max" min="1" max="1200" value="60">
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="password">注册密码</label>
+                                    <input type="text" id="password" placeholder="留空则自动生成">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="proxy">代理 URL</label>
+                                    <input type="text" id="proxy" placeholder="http://user:pass@host:port">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="user-data-dir">浏览器用户目录</label>
+                                    <input type="text" id="user-data-dir" placeholder="例如：/data/grok-profile">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="user-agent">User-Agent</label>
+                                    <input type="text" id="user-agent" placeholder="可选，自定义浏览器 UA">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="cf-clearance">cf_clearance</label>
+                                    <input type="text" id="cf-clearance" placeholder="可选，Cloudflare clearance">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="cf-bm">__cf_bm</label>
+                                    <input type="text" id="cf-bm" placeholder="可选，Cloudflare __cf_bm">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="cf-cookie">完整 Cookie 头</label>
+                                    <textarea id="cf-cookie" rows="3" placeholder="可选，例如 cf_clearance=...; __cf_bm=..."></textarea>
+                                </div>
+
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary" id="start-btn">开始执行</button>
+                                    <button type="button" class="btn btn-secondary" id="cancel-btn" disabled>取消任务</button>
+                                </div>
+                            </form>
+                            <div class="log-note">Grok 依赖浏览器执行，首次运行会比 GPT 注册慢。建议优先使用 IMAP 或稳定的临时邮箱服务。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="right-panel">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📊 任务状态</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="task-status-row">
+                                <div class="task-status-item">
+                                    <div class="label">任务 ID</div>
+                                    <div class="value" id="task-id">-</div>
+                                </div>
+                                <div class="task-status-item">
+                                    <div class="label">状态</div>
+                                    <div class="value" id="task-status">等待中</div>
+                                </div>
+                                <div class="task-status-item">
+                                    <div class="label">邮箱</div>
+                                    <div class="value" id="task-email">-</div>
+                                </div>
+                                <div class="task-status-item">
+                                    <div class="label">模式</div>
+                                    <div class="value" id="task-mode">单次</div>
+                                </div>
+                            </div>
+                            <div id="batch-progress" style="display:none;">
+                                <div class="task-status-row">
+                                    <div class="task-status-item">
+                                        <div class="label">总数</div>
+                                        <div class="value" id="batch-total">0</div>
+                                    </div>
+                                    <div class="task-status-item">
+                                        <div class="label">已完成</div>
+                                        <div class="value" id="batch-completed">0</div>
+                                    </div>
+                                    <div class="task-status-item">
+                                        <div class="label">成功</div>
+                                        <div class="value" id="batch-success">0</div>
+                                    </div>
+                                    <div class="task-status-item">
+                                        <div class="label">失败</div>
+                                        <div class="value" id="batch-failed">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>🖥️ 实时日志</h3>
+                            <div class="card-actions">
+                                <button class="btn btn-ghost btn-sm" id="clear-log-btn">清空</button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="console-log" class="console-log">
+                                <div class="log-line info">[系统] 等待启动 Grok 任务</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📦 最近注册的 Grok 账号</h3>
+                            <div class="card-actions">
+                                <button class="btn btn-ghost btn-sm" id="refresh-accounts-btn">刷新</button>
+                            </div>
+                        </div>
+                        <div class="card-body recent-accounts-table">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>邮箱</th>
+                                        <th>状态</th>
+                                        <th>来源</th>
+                                        <th>创建时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recent-accounts-table">
+                                    <tr><td colspan="4">加载中...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/utils.js?v={{ static_version }}"></script>
+    <script src="/static/js/grok.js?v={{ static_version }}"></script>
+</body>
+</html>

@@ -169,6 +169,17 @@ def create_app() -> FastAPI:
             context={},
         )
 
+    @app.get("/grok", response_class=HTMLResponse)
+    async def grok_page(request: Request):
+        """Grok 注册页面"""
+        if not _is_authenticated(request):
+            return _redirect_to_login(request)
+        return templates.TemplateResponse(
+            request=request,
+            name="grok.html",
+            context={},
+        )
+
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request):
         """设置页面"""

@@ -19,6 +19,19 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
         python3-dev \
+        chromium \
+        chromium-driver \
+        xvfb \
+        fonts-liberation \
+        libnss3 \
+        libatk-bridge2.0-0 \
+        libgtk-3-0 \
+        libgbm1 \
+        libasound2 \
+        libxdamage1 \
+        libxcomposite1 \
+        libxrandr2 \
+        xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件并安装
@@ -33,4 +46,4 @@ COPY . .
 EXPOSE 1455
 
 # 启动 WebUI
-CMD ["python", "webui.py"]
+CMD ["xvfb-run", "-a", "python", "webui.py"]
