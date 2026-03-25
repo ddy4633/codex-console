@@ -46,9 +46,9 @@ class ImapMailService(BaseEmailService):
     def _connect(self) -> imaplib.IMAP4:
         """建立 IMAP 连接并登录，返回 mail 对象"""
         if self.use_ssl:
-            mail = imaplib.IMAP4_SSL(self.host, self.port)
+            mail = imaplib.IMAP4_SSL(self.host, self.port, timeout=self.timeout)
         else:
-            mail = imaplib.IMAP4(self.host, self.port)
+            mail = imaplib.IMAP4(self.host, self.port, timeout=self.timeout)
             mail.starttls()
         mail.login(self.email_addr, self.password)
         return mail
