@@ -34,6 +34,8 @@ class GrokTaskCreate(BaseModel):
     email_service_id: Optional[int] = None
     proxy: Optional[str] = None
     password: Optional[str] = None
+    vibemail_user_jwt: Optional[str] = None
+    vibemail_api: Optional[str] = None
     user_data_dir: str = ""
     cf_clearance: str = ""
     cf_bm: str = ""
@@ -103,6 +105,24 @@ def _build_service(request: GrokTaskCreate):
             config["proxy_url"] = request.proxy
         return service_type, None, config, service_name
 
+    if service_type == EmailServiceType.VIBEMAIL:
+        with get_db() as db:
+            jwt_setting = crud.get_setting(db, "grok.vibemail_user_jwt")
+            api_setting = crud.get_setting(db, "grok.vibemail_api")
+            jwt = (request.vibemail_user_jwt or (jwt_setting.value if jwt_setting and jwt_setting.value else "")).strip()
+            api = (request.vibemail_api or (api_setting.value if api_setting and api_setting.value else "https://tmpmail.vibecodinghub.cloud")).strip()
+
+        if not jwt:
+            raise HTTPException(status_code=400, detail="缺少 Vibemail JWT，请在 Grok 页面填写或在系统设置中配置 grok.vibemail_user_jwt")
+
+        config = {
+            "user_jwt": jwt,
+            "api_base": api,
+        }
+        if request.proxy:
+            config["proxy_url"] = request.proxy
+        return service_type, None, config, "Vibemail"
+
     with get_db() as db:
         query = db.query(EmailServiceModel).filter(
             EmailServiceModel.service_type == service_type.value,
@@ -147,11 +167,13 @@ def _run_sync_grok_task(task_uuid: str, request: GrokTaskCreate, batch_id: str =
 
             email_service = EmailServiceFactory.create(service_type, config, name=service_name)
             log_callback = task_manager.create_log_callback(task_uuid, prefix=log_prefix, batch_id=batch_id)
+            default_password_setting = crud.get_setting(db, "grok.default_password")
+            resolved_password = request.password or (default_password_setting.value if default_password_setting and default_password_setting.value else None)
 
             engine = GrokRegistrationEngine(
                 email_service=email_service,
                 proxy_url=request.proxy,
-                password=request.password,
+                password=resolved_password,
                 user_data_dir=request.user_data_dir,
                 cf_clearance=request.cf_clearance,
                 cf_bm=request.cf_bm,

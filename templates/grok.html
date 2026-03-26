@@ -100,6 +100,17 @@
                                 <div class="form-group">
                                     <label for="email-service">邮箱服务</label>
                                     <select id="email-service" name="email_service" required></select>
+                                    <small style="color: var(--text-muted); font-size: 0.75rem;">支持选择已有邮箱服务，也支持直接走本地 Grok 所用的 Vibemail JWT。</small>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="vibemail-jwt">Vibemail JWT</label>
+                                    <input type="text" id="vibemail-jwt" placeholder="留空则读取系统设置 grok.vibemail_user_jwt">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="vibemail-api">Vibemail API</label>
+                                    <input type="text" id="vibemail-api" placeholder="留空则读取系统设置 grok.vibemail_api">
                                 </div>
 
                                 <div class="form-group">
@@ -128,7 +139,7 @@
 
                                 <div class="form-group">
                                     <label for="password">注册密码</label>
-                                    <input type="text" id="password" placeholder="留空则自动生成">
+                                    <input type="text" id="password" placeholder="留空则使用系统设置的 grok.default_password，再为空时自动生成">
                                 </div>
 
                                 <div class="form-group">
@@ -166,7 +177,7 @@
                                     <button type="button" class="btn btn-secondary" id="cancel-btn" disabled>取消任务</button>
                                 </div>
                             </form>
-                            <div class="log-note">Grok 依赖浏览器执行，首次运行会比 GPT 注册慢。建议优先使用 IMAP 或稳定的临时邮箱服务。</div>
+                            <div class="log-note">Grok 依赖浏览器执行，首次运行会比 GPT 注册慢。接入 Vibemail 时可直接复用你本地脚本的 JWT 与 API。</div>
                         </div>
                     </div>
                 </div>

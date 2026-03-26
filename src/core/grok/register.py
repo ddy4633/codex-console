@@ -19,7 +19,7 @@ from pathlib import Path
 from string import Template
 from typing import Any, Callable, Dict, Optional
 
-from ...config.constants import DEFAULT_PASSWORD_LENGTH, EmailServiceType, PASSWORD_CHARSET
+from ...config.constants import DEFAULT_PASSWORD_LENGTH, EmailServiceType, PASSWORD_CHARSET, XAI_OTP_CODE_PATTERN
 from ...database import crud
 from ...database.session import get_db
 from ...services.base import BaseEmailService
@@ -358,7 +358,7 @@ class GrokRegistrationEngine:
             self.email,
             self.email_info.get("service_id") if self.email_info else None,
             timeout=180,
-            pattern=r"(?<!\d)(\d{6})(?!\d)",
+            pattern=XAI_OTP_CODE_PATTERN,
             otp_sent_at=time.time(),
         )
         return (code or "").replace("-", "")

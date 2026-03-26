@@ -11,6 +11,8 @@ let lastRenderedLogs = [];
 const elements = {
     form: document.getElementById('grok-form'),
     emailService: document.getElementById('email-service'),
+    vibemailJwt: document.getElementById('vibemail-jwt'),
+    vibemailApi: document.getElementById('vibemail-api'),
     regMode: document.getElementById('reg-mode'),
     batchCountGroup: document.getElementById('batch-count-group'),
     batchOptions: document.getElementById('batch-options'),
@@ -71,6 +73,14 @@ function renderServiceOptions(data) {
     elements.emailService.innerHTML = '';
     const serviceOrder = ['tempmail', 'imap_mail', 'temp_mail', 'duck_mail', 'freemail', 'moe_mail', 'outlook'];
 
+    const vibemailGroup = document.createElement('optgroup');
+    vibemailGroup.label = '本地 Grok (Vibemail)';
+    const vibemailOption = document.createElement('option');
+    vibemailOption.value = 'vibemail:default';
+    vibemailOption.textContent = 'Vibemail JWT / 系统设置';
+    vibemailGroup.appendChild(vibemailOption);
+    elements.emailService.appendChild(vibemailGroup);
+
     serviceOrder.forEach((serviceType) => {
         const item = data[serviceType];
         if (!item || !item.available || !Array.isArray(item.services) || item.services.length === 0) {
@@ -119,6 +129,8 @@ function buildPayload() {
         email_service_type,
         proxy: elements.proxy.value.trim() || null,
         password: elements.password.value.trim() || null,
+        vibemail_user_jwt: elements.vibemailJwt.value.trim() || null,
+        vibemail_api: elements.vibemailApi.value.trim() || null,
         user_data_dir: elements.userDataDir.value.trim(),
         user_agent: elements.userAgent.value.trim(),
         cf_clearance: elements.cfClearance.value.trim(),

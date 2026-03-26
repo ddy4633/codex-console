@@ -38,6 +38,7 @@ class EmailServiceType(str, Enum):
     DUCK_MAIL = "duck_mail"
     FREEMAIL = "freemail"
     IMAP_MAIL = "imap_mail"
+    VIBEMAIL = "vibemail"
 
 
 # ============================================================================
@@ -77,6 +78,9 @@ OPENAI_PAGE_TYPES = {
     "PASSWORD_REGISTRATION": "create_account_password",  # 新账号，需要设置密码
     "LOGIN_PASSWORD": "login_password",  # 登录流程，需要输入密码
 }
+
+# xAI/Grok OTP 兼容 6 位数字和 ABC-123 两种格式。
+XAI_OTP_CODE_PATTERN = r"([A-Z]{3}-[A-Z0-9]{3})|(\b\d{6}\b)"
 
 # ============================================================================
 # 邮箱服务相关常量
@@ -268,6 +272,9 @@ DEFAULT_SETTINGS = [
     ("registration.max_retries", "3", "最大重试次数", "registration"),
     ("registration.timeout", "120", "超时时间（秒）", "registration"),
     ("registration.default_password_length", "12", "默认密码长度", "registration"),
+    ("grok.vibemail_api", "https://tmpmail.vibecodinghub.cloud", "Vibemail API 地址", "grok"),
+    ("grok.vibemail_user_jwt", "", "Vibemail 用户 JWT", "grok"),
+    ("grok.default_password", "", "Grok 默认注册密码", "grok"),
     ("webui.host", "0.0.0.0", "Web UI 监听主机", "webui"),
     ("webui.port", "8000", "Web UI 监听端口", "webui"),
     ("webui.debug", "true", "调试模式", "webui"),
