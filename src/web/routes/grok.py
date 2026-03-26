@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import random
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
+from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
@@ -34,6 +36,68 @@ def _get_db_setting(db, key: str, default: str = "") -> str:
     """从数据库读取系统设置（兼容空字符串）。"""
     setting = crud.get_setting(db, key)
     return setting.value.strip() if setting and setting.value else default
+
+
+GROK_VIBEMAIL_DEFAULT_API = "https://tmpmail.vibecodinghub.cloud"
+
+
+def _mask_secret(value: str, keep: int = 6) -> str:
+    """敏感信息摘要显示，避免直接泄露完整 JWT。"""
+    value = (value or "").strip()
+    if len(value) <= keep:
+        return "*" * len(value)
+    return f"{value[:3]}...{value[-3:]}"
+
+
+def _resolve_vibemail_credentials(db) -> tuple[str, str, str, str]:
+    """解析 Vibemail 配置（数据库 -> 环境变量 -> 文件），返回 (jwt, api, jwt_source, api_source)。"""
+    jwt = _get_db_setting(db, "grok.vibemail_user_jwt")
+    jwt_source = "系统设置"
+    if not jwt:
+        jwt_source = "未配置"
+
+    if not jwt:
+        for env_key in ("GROK_VIBEMAIL_USER_JWT", "VIBEMAIL_USER_JWT", "GROK_VIBEMAIL_TOKEN"):
+            jwt = os.getenv(env_key, "").strip()
+            if jwt:
+                jwt_source = f"环境变量 {env_key}"
+                break
+
+    if not jwt:
+        jwt_files = []
+        env_file = os.getenv("GROK_VIBEMAIL_USER_JWT_FILE") or os.getenv("VIBEMAIL_USER_JWT_FILE")
+        if env_file:
+            jwt_files.append(Path(env_file))
+        jwt_files.append(Path(__file__).resolve().parents[3] / ".vibemail_jwt")
+
+        for path in jwt_files:
+            try:
+                if path.exists() and path.is_file():
+                    jwt = path.read_text(encoding="utf-8").strip()
+                    if jwt:
+                        jwt_source = f"文件 {path}"
+                        break
+            except Exception:
+                continue
+
+    api = _get_db_setting(db, "grok.vibemail_api")
+    api_source = "系统设置"
+    if not api:
+        api_source = "未配置"
+
+    if not api:
+        for env_key in ("GROK_VIBEMAIL_API", "VIBEMAIL_API"):
+            candidate = os.getenv(env_key, "").strip()
+            if candidate:
+                api = candidate
+                api_source = f"环境变量 {env_key}"
+                break
+
+    if not api:
+        api = GROK_VIBEMAIL_DEFAULT_API
+        api_source = "默认值"
+
+    return jwt, api, jwt_source, api_source
 
 
 def get_proxy_for_grok_registration(db) -> tuple[Optional[str], Optional[int]]:
@@ -139,13 +203,25 @@ def _build_service(request: GrokTaskCreate, proxy_url: Optional[str] = None):
 
     if service_type == EmailServiceType.VIBEMAIL:
         with get_db() as db:
-            jwt_setting = crud.get_setting(db, "grok.vibemail_user_jwt")
-            api_setting = crud.get_setting(db, "grok.vibemail_api")
-            jwt = (request.vibemail_user_jwt or (jwt_setting.value if jwt_setting and jwt_setting.value else "")).strip()
-            api = (request.vibemail_api or (api_setting.value if api_setting and api_setting.value else "https://tmpmail.vibecodinghub.cloud")).strip()
+            jwt, api, jwt_source, api_source = _resolve_vibemail_credentials(db)
+            if request.vibemail_user_jwt:
+                jwt = request.vibemail_user_jwt.strip()
+                jwt_source = "页面输入"
+            if request.vibemail_api:
+                api = request.vibemail_api.strip()
+                api_source = "页面输入"
 
         if not jwt:
-            raise HTTPException(status_code=400, detail="缺少 Vibemail JWT，请在 Grok 页面填写或在系统设置中配置 grok.vibemail_user_jwt")
+            raise HTTPException(
+                status_code=400,
+                detail="缺少 Vibemail JWT，请在页面填写或配置 grok.vibemail_user_jwt（支持数据库/环境变量/.vibemail_jwt 文件）",
+            )
+
+        logger.info(
+            "Grok 服务使用 Vibemail 配置: jwt 来源=%s, api 来源=%s",
+            jwt_source,
+            api_source,
+        )
 
         config = {
             "user_jwt": jwt,
@@ -405,13 +481,16 @@ async def get_grok_defaults():
         settings = get_settings()
         default_password = _get_db_setting(db, "grok.default_password")
         proxy, _ = get_proxy_for_grok_registration(db)
+        vibemail_user_jwt, vibemail_api, jwt_source, api_source = _resolve_vibemail_credentials(db)
 
         return {
             "proxy": proxy,
             "password_length": settings.registration_default_password_length,
             "default_password": default_password,
-            "vibemail_user_jwt": _get_db_setting(db, "grok.vibemail_user_jwt"),
-            "vibemail_api": _get_db_setting(db, "grok.vibemail_api", "https://tmpmail.vibecodinghub.cloud"),
+            "vibemail_user_jwt": _mask_secret(vibemail_user_jwt) if vibemail_user_jwt else "",
+            "vibemail_api": vibemail_api,
+            "vibemail_user_jwt_source": jwt_source,
+            "vibemail_api_source": api_source,
         }
 
 

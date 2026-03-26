@@ -109,6 +109,8 @@ def test_get_grok_defaults_uses_database_and_global_config(monkeypatch):
 
     assert result["proxy"] == "http://127.0.0.1:7890"
     assert result["default_password"] == "db-password"
-    assert result["vibemail_user_jwt"] == "jwt-token"
+    assert result["vibemail_user_jwt"] == "jwt...ken"
     assert result["vibemail_api"] == "https://tmpmail.example.com"
     assert result["password_length"] == 16
+    assert result["vibemail_user_jwt_source"] == "系统设置"
+    assert result["vibemail_api_source"] == "系统设置"

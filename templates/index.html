@@ -445,12 +445,14 @@
 
                                         <div class="form-group">
                                             <label for="grok-vibemail-jwt">Vibemail JWT</label>
-                                            <input type="text" id="grok-vibemail-jwt" placeholder="留空则读取系统设置 grok.vibemail_user_jwt">
+                                            <input type="text" id="grok-vibemail-jwt" placeholder="留空则复用系统配置中的 Vibemail JWT">
+                                            <div class="form-tip" id="grok-vibemail-jwt-hint">留空将自动读取数据库/环境变量/默认文件配置</div>
                                         </div>
 
                                         <div class="form-group">
                                             <label for="grok-vibemail-api">Vibemail API</label>
-                                            <input type="text" id="grok-vibemail-api" placeholder="留空则读取系统设置 grok.vibemail_api">
+                                            <input type="text" id="grok-vibemail-api" placeholder="留空则复用系统配置中的 API 地址">
+                                            <div class="form-tip" id="grok-vibemail-api-hint">留空将自动读取数据库或默认值</div>
                                         </div>
 
                                         <div class="form-group">

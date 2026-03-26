@@ -110,7 +110,9 @@ const elements = {
     grokForm: document.getElementById('grok-form'),
     grokEmailService: document.getElementById('grok-email-service'),
     grokVibemailJwt: document.getElementById('grok-vibemail-jwt'),
+    grokVibemailJwtHint: document.getElementById('grok-vibemail-jwt-hint'),
     grokVibemailApi: document.getElementById('grok-vibemail-api'),
+    grokVibemailApiHint: document.getElementById('grok-vibemail-api-hint'),
     grokRegMode: document.getElementById('grok-reg-mode'),
     grokBatchCountGroup: document.getElementById('grok-batch-count-group'),
     grokBatchOptions: document.getElementById('grok-batch-options'),
@@ -358,6 +360,32 @@ async function loadGrokDefaults() {
 
     try {
         const defaults = await api.get('/grok/defaults');
+        const hasJwt = Boolean(trimValue(defaults.vibemail_user_jwt));
+        const hasApi = Boolean(trimValue(defaults.vibemail_api));
+        const jwtSource = defaults.vibemail_user_jwt_source || '未配置';
+        const apiSource = defaults.vibemail_api_source || '默认值';
+
+        if (elements.grokVibemailJwtHint) {
+            if (hasJwt) {
+                elements.grokVibemailJwtHint.textContent = `已从 ${jwtSource} 获取，留空将自动复用${defaults.vibemail_user_jwt}`;
+            } else {
+                elements.grokVibemailJwtHint.textContent = '未检测到 Vibemail JWT，可在下方手工填写以覆盖默认来源';
+            }
+            if (!trimValue(elements.grokVibemailJwt.value) && hasJwt) {
+                elements.grokVibemailJwt.placeholder = `留空则复用默认 JWT（来源：${jwtSource}）`;
+            }
+        }
+
+        if (elements.grokVibemailApiHint) {
+            if (hasApi) {
+                elements.grokVibemailApiHint.textContent = `已从 ${apiSource} 获取，留空将自动复用 ${defaults.vibemail_api}`;
+            } else {
+                elements.grokVibemailApiHint.textContent = '未检测到 API 配置，留空将自动使用默认地址';
+            }
+            if (!trimValue(elements.grokVibemailApi.value) && hasApi) {
+                elements.grokVibemailApi.placeholder = `留空则复用默认 API（来源：${apiSource}）`;
+            }
+        }
 
         if (!trimValue(elements.grokPassword.value) && defaults.default_password) {
             elements.grokPassword.value = defaults.default_password;
@@ -369,14 +397,6 @@ async function loadGrokDefaults() {
 
         if (!trimValue(elements.grokProxy.value) && defaults.proxy) {
             elements.grokProxy.value = defaults.proxy;
-        }
-
-        if (!trimValue(elements.grokVibemailJwt.value) && defaults.vibemail_user_jwt) {
-            elements.grokVibemailJwt.value = defaults.vibemail_user_jwt;
-        }
-
-        if (!trimValue(elements.grokVibemailApi.value) && defaults.vibemail_api) {
-            elements.grokVibemailApi.value = defaults.vibemail_api;
         }
     } catch (error) {
         console.error('加载 Grok 默认配置失败:', error);
