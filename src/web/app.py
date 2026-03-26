@@ -182,9 +182,11 @@ def create_app() -> FastAPI:
             context={},
         )
 
-    @app.get("/grok", response_class=HTMLResponse)
+    @app.api_route("/grok", methods=["GET", "HEAD"], response_class=HTMLResponse)
     async def grok_page(request: Request):
-        """兼容旧入口，跳转到首页 Grok 标签页"""
+        """兼容旧入口，跳转到首页 Grok 标签页。"""
+        if request.method == "HEAD":
+            return Response(status_code=302)
         if not _is_authenticated(request):
             return _redirect_to_login(request)
         return RedirectResponse(url="/?tab=grok", status_code=302)

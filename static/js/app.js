@@ -133,14 +133,27 @@ document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
     initRegistrationTabs();
     loadAvailableServices();
-    loadGrokDefaults();
+    if (hasGrokPage()) {
+        loadGrokDefaults();
+    }
     loadRecentAccounts();
     startAccountsPolling();
     initVisibilityReconnect();
     restoreActiveTask();
-    restoreActiveGrokTask();
+    if (hasGrokPage()) {
+        restoreActiveGrokTask();
+    }
     initAutoUploadOptions();
 });
+
+// 页面是否包含 Grok 注册组件
+function hasGrokPage() {
+    return Boolean(elements.grokPanel && elements.grokForm && elements.grokStartBtn && elements.grokCancelBtn);
+}
+
+function trimValue(value) {
+    return (value || '').toString().trim();
+}
 
 // 初始化注册后自动操作选项（CPA / Sub2API / TM）
 async function initAutoUploadOptions() {
@@ -223,39 +236,62 @@ function getSelectedServiceIds(container) {
 // 事件监听
 function initEventListeners() {
     // 注册表单提交
-    elements.form.addEventListener('submit', handleStartRegistration);
-    elements.grokForm.addEventListener('submit', handleStartGrokRegistration);
+    if (elements.form) {
+        elements.form.addEventListener('submit', handleStartRegistration);
+    }
+    if (elements.grokForm && hasGrokPage()) {
+        elements.grokForm.addEventListener('submit', handleStartGrokRegistration);
+    }
 
     // 注册模式切换
-    elements.regMode.addEventListener('change', handleModeChange);
-    elements.grokRegMode.addEventListener('change', handleGrokModeChange);
+    if (elements.regMode) {
+        elements.regMode.addEventListener('change', handleModeChange);
+    }
+    if (elements.grokRegMode && hasGrokPage()) {
+        elements.grokRegMode.addEventListener('change', handleGrokModeChange);
+    }
 
     // 邮箱服务切换
-    elements.emailService.addEventListener('change', handleServiceChange);
+    if (elements.emailService) {
+        elements.emailService.addEventListener('change', handleServiceChange);
+    }
 
     // 取消按钮
-    elements.cancelBtn.addEventListener('click', handleCancelTask);
-    elements.grokCancelBtn.addEventListener('click', handleCancelGrokTask);
+    if (elements.cancelBtn) {
+        elements.cancelBtn.addEventListener('click', handleCancelTask);
+    }
+    if (elements.grokCancelBtn && hasGrokPage()) {
+        elements.grokCancelBtn.addEventListener('click', handleCancelGrokTask);
+    }
 
     // 清空日志
-    elements.clearLogBtn.addEventListener('click', () => {
-        elements.consoleLog.innerHTML = '<div class="log-line info">[系统] 日志已清空</div>';
-        displayedLogs.clear();  // 清空日志去重集合
-    });
+    if (elements.clearLogBtn) {
+        elements.clearLogBtn.addEventListener('click', () => {
+            if (!elements.consoleLog) return;
+            elements.consoleLog.innerHTML = '<div class="log-line info">[系统] 日志已清空</div>';
+            displayedLogs.clear();  // 清空日志去重集合
+        });
+    }
 
     // 刷新账号列表
-    elements.refreshAccountsBtn.addEventListener('click', () => {
-        loadRecentAccounts();
-        toast.info('已刷新');
-    });
+    if (elements.refreshAccountsBtn) {
+        elements.refreshAccountsBtn.addEventListener('click', () => {
+            loadRecentAccounts();
+            toast.info('已刷新');
+        });
+    }
 
     // 并发模式切换
-    elements.concurrencyMode.addEventListener('change', () => {
-        handleConcurrencyModeChange(elements.concurrencyMode, elements.concurrencyHint, elements.intervalGroup);
-    });
-    elements.outlookConcurrencyMode.addEventListener('change', () => {
-        handleConcurrencyModeChange(elements.outlookConcurrencyMode, elements.outlookConcurrencyHint, elements.outlookIntervalGroup);
-    });
+    if (elements.concurrencyMode) {
+        elements.concurrencyMode.addEventListener('change', () => {
+            handleConcurrencyModeChange(elements.concurrencyMode, elements.concurrencyHint, elements.intervalGroup);
+        });
+    }
+    if (elements.outlookConcurrencyMode) {
+        elements.outlookConcurrencyMode.addEventListener('change', () => {
+            handleConcurrencyModeChange(elements.outlookConcurrencyMode, elements.outlookConcurrencyHint, elements.outlookIntervalGroup);
+        });
+    }
 
     elements.registrationTabs.forEach((tab) => {
         tab.addEventListener('click', () => switchRegistrationTab(tab.dataset.provider));
@@ -263,6 +299,10 @@ function initEventListeners() {
 }
 
 function initRegistrationTabs() {
+    if (!elements.registrationTabs.length || !elements.registrationPanels.length) {
+        return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const provider = params.get('tab') === 'grok' ? 'grok' : 'openai';
     switchRegistrationTab(provider, false);
@@ -314,26 +354,28 @@ async function loadAvailableServices() {
 }
 
 async function loadGrokDefaults() {
+    if (!hasGrokPage()) return;
+
     try {
         const defaults = await api.get('/grok/defaults');
 
-        if (!elements.grokPassword.value.trim() && defaults.default_password) {
+        if (!trimValue(elements.grokPassword.value) && defaults.default_password) {
             elements.grokPassword.value = defaults.default_password;
         }
 
-        if (!elements.grokPassword.value.trim() && defaults.password_length) {
+        if (!trimValue(elements.grokPassword.value) && defaults.password_length) {
             elements.grokPassword.placeholder = `未填写则自动生成 ${defaults.password_length} 位密码`;
         }
 
-        if (!elements.grokProxy.value.trim() && defaults.proxy) {
+        if (!trimValue(elements.grokProxy.value) && defaults.proxy) {
             elements.grokProxy.value = defaults.proxy;
         }
 
-        if (!elements.grokVibemailJwt.value.trim() && defaults.vibemail_user_jwt) {
+        if (!trimValue(elements.grokVibemailJwt.value) && defaults.vibemail_user_jwt) {
             elements.grokVibemailJwt.value = defaults.vibemail_user_jwt;
         }
 
-        if (!elements.grokVibemailApi.value.trim() && defaults.vibemail_api) {
+        if (!trimValue(elements.grokVibemailApi.value) && defaults.vibemail_api) {
             elements.grokVibemailApi.value = defaults.vibemail_api;
         }
     } catch (error) {
@@ -344,6 +386,8 @@ async function loadGrokDefaults() {
 // 更新邮箱服务选择框
 function updateEmailServiceOptions() {
     const select = elements.emailService;
+    if (!select) return;
+
     select.innerHTML = '';
 
     // Tempmail
@@ -497,6 +541,8 @@ function updateEmailServiceOptions() {
 }
 
 function updateGrokEmailServiceOptions() {
+    if (!hasGrokPage()) return;
+
     const select = elements.grokEmailService;
     if (!select) return;
 
@@ -602,6 +648,8 @@ function handleModeChange(e) {
 }
 
 function handleGrokModeChange() {
+    if (!hasGrokPage()) return;
+
     const isBatch = elements.grokRegMode.value === 'batch';
     elements.grokBatchCountGroup.style.display = isBatch ? 'block' : 'none';
     elements.grokBatchOptions.style.display = isBatch ? 'block' : 'none';
@@ -874,6 +922,10 @@ async function handleBatchRegistration(requestData) {
 }
 
 function getSelectedGrokServiceMeta() {
+    if (!hasGrokPage() || !elements.grokEmailService) {
+        throw new Error('当前页面不支持 Grok 配置');
+    }
+
     const selectedValue = elements.grokEmailService.value;
     const selectedOption = elements.grokEmailService.options[elements.grokEmailService.selectedIndex];
     return {
@@ -883,6 +935,10 @@ function getSelectedGrokServiceMeta() {
 }
 
 function buildGrokRequestData() {
+    if (!hasGrokPage()) {
+        throw new Error('当前页面不支持 Grok 注册');
+    }
+
     const { selectedValue, label } = getSelectedGrokServiceMeta();
     if (!selectedValue) {
         throw new Error('请选择一个 Grok 邮箱服务');
@@ -893,15 +949,15 @@ function buildGrokRequestData() {
 
     const requestData = {
         email_service_type: emailServiceType,
-        proxy: elements.grokProxy.value.trim() || null,
-        password: elements.grokPassword.value.trim() || null,
-        vibemail_user_jwt: elements.grokVibemailJwt.value.trim() || null,
-        vibemail_api: elements.grokVibemailApi.value.trim() || null,
-        user_data_dir: elements.grokUserDataDir.value.trim(),
-        user_agent: elements.grokUserAgent.value.trim(),
-        cf_clearance: elements.grokCfClearance.value.trim(),
-        cf_bm: elements.grokCfBm.value.trim(),
-        cf_cookie_header: elements.grokCfCookie.value.trim(),
+        proxy: trimValue(elements.grokProxy.value) || null,
+        password: trimValue(elements.grokPassword.value) || null,
+        vibemail_user_jwt: trimValue(elements.grokVibemailJwt.value) || null,
+        vibemail_api: trimValue(elements.grokVibemailApi.value) || null,
+        user_data_dir: trimValue(elements.grokUserDataDir.value),
+        user_agent: trimValue(elements.grokUserAgent.value),
+        cf_clearance: trimValue(elements.grokCfClearance.value),
+        cf_bm: trimValue(elements.grokCfBm.value),
+        cf_cookie_header: trimValue(elements.grokCfCookie.value),
     };
 
     if (serviceId && serviceId !== 'default') {
@@ -918,6 +974,8 @@ function buildGrokRequestData() {
 }
 
 function setGrokButtonsState(startDisabled, cancelDisabled) {
+    if (!hasGrokPage()) return;
+
     elements.grokStartBtn.disabled = startDisabled;
     elements.grokCancelBtn.disabled = cancelDisabled;
 }
@@ -940,6 +998,10 @@ function stopGrokPollers() {
 }
 
 function finishGrokRun() {
+    if (!hasGrokPage()) {
+        return;
+    }
+
     stopGrokPollers();
     setGrokButtonsState(false, true);
     clearGrokSessionState();
@@ -947,6 +1009,10 @@ function finishGrokRun() {
 }
 
 async function handleStartGrokRegistration(e) {
+    if (!hasGrokPage()) {
+        return;
+    }
+
     e.preventDefault();
 
     if (currentTask || currentBatch) {
@@ -1035,7 +1101,7 @@ async function handleBatchGrokRegistration(requestData) {
 }
 
 async function pollGrokTask() {
-    if (!grokCurrentTaskUuid) return;
+    if (!hasGrokPage() || !grokCurrentTaskUuid) return;
 
     try {
         const data = await api.get(`/grok/tasks/${grokCurrentTaskUuid}`);
@@ -1068,7 +1134,7 @@ async function pollGrokTask() {
 }
 
 async function pollGrokBatch() {
-    if (!grokCurrentBatchId) return;
+    if (!hasGrokPage() || !grokCurrentBatchId) return;
 
     try {
         const data = await api.get(`/grok/batches/${grokCurrentBatchId}`);
@@ -1101,6 +1167,8 @@ async function pollGrokBatch() {
 }
 
 async function handleCancelGrokTask() {
+    if (!hasGrokPage()) return;
+
     if (!grokCurrentTaskUuid && !grokCurrentBatchId) {
         toast.warning('当前没有活动的 Grok 任务');
         return;
@@ -1354,6 +1422,8 @@ function updateBatchProgress(data) {
 
 // 加载最近注册的账号
 async function loadRecentAccounts() {
+    if (!elements.recentAccountsTable) return;
+
     try {
         const endpoint = activeProvider === 'grok'
             ? '/grok/recent-accounts?limit=10'
@@ -1939,6 +2009,8 @@ async function restoreActiveTask() {
 }
 
 async function restoreActiveGrokTask() {
+    if (!hasGrokPage()) return;
+
     const saved = sessionStorage.getItem('activeGrokTask');
     if (!saved) return;
 
