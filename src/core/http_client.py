@@ -350,16 +350,16 @@ class OpenAIHTTPClient(HTTPClient):
         except cffi_requests.RequestsError as e:
             raise HTTPClientError(f"OpenAI 请求失败: {endpoint} - {e}")
 
-    def check_sentinel(self, did: str, proxies: Optional[Dict] = None) -> Optional[str]:
+    def check_sentinel(self, did: str, proxies: Optional[Dict] = None) -> Optional[Tuple[str, str, str]]:
         """
-        检查 Sentinel 拦截
+        两阶段 Sentinel 鉴权：先计算 POW，再提交获取服务端 token 和 turnstile dx。
 
         Args:
             did: Device ID
             proxies: 代理配置
 
         Returns:
-            Sentinel token 或 None
+            (server_token, turnstile_dx, pow_token) 或 None
         """
         from ..config.constants import OPENAI_API_ENDPOINTS
 
@@ -382,7 +382,11 @@ class OpenAIHTTPClient(HTTPClient):
             )
 
             if response.status_code == 200:
-                return response.json().get("token")
+                data = response.json()
+                server_token = data.get("token", "")
+                turnstile = data.get("turnstile", {})
+                turnstile_dx = turnstile.get("dx", "") if isinstance(turnstile, dict) else ""
+                return server_token, turnstile_dx, pow_token
             else:
                 logger.warning(f"Sentinel 检查失败: {response.status_code}")
                 return None

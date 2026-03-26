@@ -1576,7 +1576,6 @@ def _run_sync_grok_registration(
     batch_id: str = "",
 ):
     """在线程池中执行 Grok 注册"""
-    from ...core.grok_browser_register import GrokRegistrationEngine
     from ...services.vibemail import VibemailService
 
     with get_db() as db:
@@ -1618,18 +1617,56 @@ def _run_sync_grok_registration(
 
             log_callback = task_manager.create_log_callback(task_uuid, prefix=log_prefix, batch_id=batch_id)
 
-            engine = GrokRegistrationEngine(
-                email_service=email_service,
-                proxy_url=actual_proxy,
-                password=actual_password,
-                user_data_dir=user_data_dir,
-                user_agent=user_agent,
-                cf_clearance=cf_clearance,
-                cf_bm=cf_bm,
-                cf_cookie_header=cf_cookie,
-                callback_logger=log_callback,
-                task_uuid=task_uuid,
-            )
+            def _build_grok_engine():
+                """按配置创建 Grok 引擎。
+
+                默认优先使用纯 HTTP 实现（更轻量、部署兼容性更好）。
+                如果请求携带浏览器相关参数，则优先尝试浏览器实现；
+                任何初始化失败都回退到可用实现，避免任务直接挂掉。
+                """
+                use_http_by_default = not any([
+                    user_data_dir,
+                    user_agent,
+                    cf_clearance,
+                    cf_bm,
+                    cf_cookie,
+                ])
+
+                if use_http_by_default:
+                    try:
+                        from ...core.grok_register import GrokRegistrationEngine
+
+                        return GrokRegistrationEngine(
+                            email_service=email_service,
+                            proxy_url=actual_proxy,
+                            password=actual_password,
+                            user_data_dir=user_data_dir,
+                            user_agent=user_agent,
+                            cf_clearance=cf_clearance,
+                            cf_bm=cf_bm,
+                            cf_cookie_header=cf_cookie,
+                            callback_logger=log_callback,
+                            task_uuid=task_uuid,
+                        )
+                    except Exception as e:
+                        logger.warning(f"Grok HTTP 引擎初始化失败，回退到浏览器引擎: {e}")
+
+                from ...core.grok_browser_register import GrokRegistrationEngine
+
+                return GrokRegistrationEngine(
+                    email_service=email_service,
+                    proxy_url=actual_proxy,
+                    password=actual_password,
+                    user_data_dir=user_data_dir,
+                    user_agent=user_agent,
+                    cf_clearance=cf_clearance,
+                    cf_bm=cf_bm,
+                    cf_cookie_header=cf_cookie,
+                    callback_logger=log_callback,
+                    task_uuid=task_uuid,
+                )
+
+            engine = _build_grok_engine()
 
             result = engine.register()
 

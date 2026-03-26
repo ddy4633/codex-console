@@ -251,13 +251,14 @@ class RegistrationEngine:
 
         return None
 
-    def _check_sentinel(self, did: str) -> Optional[str]:
-        """检查 Sentinel 拦截"""
+    def _check_sentinel(self, did: str) -> Optional[tuple]:
+        """两阶段 Sentinel 鉴权，返回 (server_token, turnstile_dx, pow_token) 或 None"""
         try:
-            sen_token = self.http_client.check_sentinel(did)
-            if sen_token:
-                self._log(f"Sentinel token 获取成功")
-                return sen_token
+            result = self.http_client.check_sentinel(did)
+            if result:
+                server_token, turnstile_dx, pow_token = result
+                self._log(f"Sentinel token 获取成功 (c={'✓' if server_token else '✗'})")
+                return result
             self._log("Sentinel 检查失败: 未获取到 token", "warning")
             return None
 
@@ -268,7 +269,7 @@ class RegistrationEngine:
     def _submit_auth_start(
         self,
         did: str,
-        sen_token: Optional[str],
+        sen_token: Optional[tuple],
         *,
         screen_hint: str,
         referer: str,
@@ -297,10 +298,11 @@ class RegistrationEngine:
             }
 
             if sen_token:
+                server_token, turnstile_dx, pow_token = sen_token
                 sentinel = json.dumps({
-                    "p": "",
-                    "t": "",
-                    "c": sen_token,
+                    "p": pow_token,
+                    "t": turnstile_dx,
+                    "c": server_token,
                     "id": did,
                     "flow": "authorize_continue",
                 })
@@ -355,7 +357,7 @@ class RegistrationEngine:
     def _submit_signup_form(
         self,
         did: str,
-        sen_token: Optional[str],
+        sen_token: Optional[tuple],
         *,
         record_existing_account: bool = True,
     ) -> SignupFormResult:
@@ -369,7 +371,7 @@ class RegistrationEngine:
             record_existing_account=record_existing_account,
         )
 
-    def _submit_login_start(self, did: str, sen_token: Optional[str]) -> SignupFormResult:
+    def _submit_login_start(self, did: str, sen_token: Optional[tuple]) -> SignupFormResult:
         """提交登录入口表单。"""
         return self._submit_auth_start(
             did,
@@ -429,8 +431,8 @@ class RegistrationEngine:
         self.session_token = None
         self._otp_sent_at = None
 
-    def _prepare_authorize_flow(self, label: str) -> Tuple[Optional[str], Optional[str]]:
-        """初始化当前阶段的授权流程，返回 device id 和 sentinel token。"""
+    def _prepare_authorize_flow(self, label: str) -> Tuple[Optional[str], Optional[tuple]]:
+        """初始化当前阶段的授权流程，返回 device id 和 sentinel token 三元组。"""
         self._log(f"{label}: 先把会话热热身...")
         if not self._init_session():
             return None, None
@@ -908,23 +910,20 @@ class RegistrationEngine:
                     result.error_message = "注册密码失败"
                     return result
 
-                self._log("6. 催一下注册验证码出门，邮差该冲刺了...")
-                if not self._send_verification_code():
-                    result.error_message = "发送验证码失败"
-                    return result
-
-                self._log("7. 等验证码飞来，邮箱请注意查收...")
+                # 服务端自动发送验证码，不需要手动调 send_otp
+                self._log("6. 等验证码飞来，邮箱请注意查收...")
+                self._otp_sent_at = time.time()
                 code = self._get_verification_code()
                 if not code:
                     result.error_message = "获取验证码失败"
                     return result
 
-                self._log("8. 对一下验证码，看看是不是本人...")
+                self._log("7. 对一下验证码，看看是不是本人...")
                 if not self._validate_verification_code(code):
                     result.error_message = "验证验证码失败"
                     return result
 
-                self._log("9. 给账号办个正式户口，名字写档案里...")
+                self._log("8. 给账号办个正式户口，名字写档案里...")
                 if not self._create_user_account():
                     result.error_message = "创建用户账户失败"
                     return result

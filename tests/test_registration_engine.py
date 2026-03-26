@@ -168,7 +168,7 @@ def _response_with_login_cookies(workspace_id="ws-1", session_token="session-1")
 
 def test_check_sentinel_sends_non_empty_pow(monkeypatch):
     session = QueueSession([
-        ("POST", OPENAI_API_ENDPOINTS["sentinel"], DummyResponse(payload={"token": "sentinel-token"})),
+        ("POST", OPENAI_API_ENDPOINTS["sentinel"], DummyResponse(payload={"token": "sentinel-token", "turnstile": {"dx": "turnstile-dx"}})),
     ])
     client = OpenAIHTTPClient()
     client._session = session
@@ -178,9 +178,13 @@ def test_check_sentinel_sends_non_empty_pow(monkeypatch):
         lambda user_agent: "gAAAAACpow-token",
     )
 
-    token = client.check_sentinel("device-1")
+    result = client.check_sentinel("device-1")
 
-    assert token == "sentinel-token"
+    assert result is not None
+    server_token, turnstile_dx, pow_token = result
+    assert server_token == "sentinel-token"
+    assert turnstile_dx == "turnstile-dx"
+    assert pow_token == "gAAAAACpow-token"
     body = json.loads(session.calls[0]["kwargs"]["data"])
     assert body["id"] == "device-1"
     assert body["flow"] == "authorize_continue"
@@ -196,7 +200,7 @@ def test_run_registers_then_relogs_to_fetch_token():
             DummyResponse(payload={"page": {"type": OPENAI_PAGE_TYPES["PASSWORD_REGISTRATION"]}}),
         ),
         ("POST", OPENAI_API_ENDPOINTS["register"], DummyResponse(payload={})),
-        ("GET", OPENAI_API_ENDPOINTS["send_otp"], DummyResponse(payload={})),
+        # send_otp 已移除 —— 服务端自动发送
         ("POST", OPENAI_API_ENDPOINTS["validate_otp"], DummyResponse(payload={})),
         ("POST", OPENAI_API_ENDPOINTS["create_account"], DummyResponse(payload={})),
     ])
@@ -231,7 +235,10 @@ def test_run_registers_then_relogs_to_fetch_token():
     email_service = FakeEmailService(["123456", "654321"])
     engine = RegistrationEngine(email_service)
     fake_oauth = FakeOAuthManager()
-    engine.http_client = FakeOpenAIClient([session_one, session_two], ["sentinel-1", "sentinel-2"])
+    engine.http_client = FakeOpenAIClient(
+        [session_one, session_two],
+        [("sentinel-1", "dx-1", "pow-1"), ("sentinel-2", "dx-2", "pow-2")],
+    )
     engine.oauth_manager = fake_oauth
 
     result = engine.run()
@@ -243,7 +250,8 @@ def test_run_registers_then_relogs_to_fetch_token():
     assert fake_oauth.start_calls == 2
     assert len(email_service.otp_requests) == 2
     assert all(item["otp_sent_at"] is not None for item in email_service.otp_requests)
-    assert sum(1 for call in session_one.calls if call["url"] == OPENAI_API_ENDPOINTS["send_otp"]) == 1
+    # send_otp 已移除
+    assert sum(1 for call in session_one.calls if call["url"] == OPENAI_API_ENDPOINTS["send_otp"]) == 0
     assert sum(1 for call in session_two.calls if call["url"] == OPENAI_API_ENDPOINTS["send_otp"]) == 0
     assert sum(1 for call in session_one.calls if call["url"] == OPENAI_API_ENDPOINTS["select_workspace"]) == 0
     assert sum(1 for call in session_two.calls if call["url"] == OPENAI_API_ENDPOINTS["select_workspace"]) == 1
@@ -282,7 +290,7 @@ def test_existing_account_login_uses_auto_sent_otp_without_manual_send():
     email_service = FakeEmailService(["246810"])
     engine = RegistrationEngine(email_service)
     fake_oauth = FakeOAuthManager()
-    engine.http_client = FakeOpenAIClient([session], ["sentinel-1"])
+    engine.http_client = FakeOpenAIClient([session], [("sentinel-1", "dx-1", "pow-1")])
     engine.oauth_manager = fake_oauth
 
     result = engine.run()

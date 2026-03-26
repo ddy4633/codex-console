@@ -15,9 +15,85 @@ from typing import Sequence
 DEFAULT_SENTINEL_DIFF = "0fffff"
 DEFAULT_MAX_ITERATIONS = 500_000
 _SCREEN_SIGNATURES = (3000, 3120, 4000, 4160)
+_CORES = (8, 12, 16, 24)
 _LANGUAGE_SIGNATURE = "en-US,es-US,en,es"
-_NAVIGATOR_KEYS = ("location", "ontransitionend", "onprogress")
-_WINDOW_KEYS = ("window", "document", "navigator")
+
+_NAVIGATOR_KEYS = (
+    "location",
+    "ontransitionend",
+    "onprogress",
+    "vendorSub",
+    "productSub",
+    "vendor",
+    "maxTouchPoints",
+    "scheduling",
+    "userActivation",
+    "doNotTrack",
+    "geolocation",
+    "connection",
+    "plugins",
+    "mimeTypes",
+    "pdfViewerEnabled",
+    "webkitTemporaryStorage",
+    "webkitPersistentStorage",
+    "hardwareConcurrency",
+    "cookieEnabled",
+    "appCodeName",
+    "appName",
+    "appVersion",
+    "platform",
+    "product",
+    "userAgent",
+    "language",
+    "languages",
+    "onLine",
+    "webdriver",
+)
+_DOCUMENT_KEYS = (
+    "createElement",
+    "createElementNS",
+    "createTextNode",
+    "createComment",
+    "createProcessingInstruction",
+    "importNode",
+    "adoptNode",
+    "createAttribute",
+    "createAttributeNS",
+    "createEvent",
+    "createRange",
+    "createNodeIterator",
+    "createTreeWalker",
+    "getElementsByTagName",
+    "getElementsByTagNameNS",
+    "getElementById",
+    "getElementsByClassName",
+    "querySelector",
+    "querySelectorAll",
+)
+_WINDOW_KEYS = (
+    "window",
+    "document",
+    "navigator",
+    "addEventListener",
+    "removeEventListener",
+    "dispatchEvent",
+    "atob",
+    "btoa",
+    "fetch",
+    "createImageBitmap",
+    "structuredClone",
+    "blur",
+    "focus",
+    "close",
+    "stop",
+    "open",
+    "alert",
+    "confirm",
+    "prompt",
+    "print",
+    "postMessage",
+    "captureEvents",
+)
 
 
 class SentinelPOWError(RuntimeError):
@@ -46,12 +122,12 @@ def build_sentinel_config(user_agent: str) -> list:
         _LANGUAGE_SIGNATURE,
         0,
         random.choice(_NAVIGATOR_KEYS),
-        "location",
+        random.choice(_DOCUMENT_KEYS),
         random.choice(_WINDOW_KEYS),
         perf_ms,
         str(uuid.uuid4()),
         "",
-        8,
+        random.choice(_CORES),
         epoch_ms,
     ]
 
