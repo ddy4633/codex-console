@@ -405,7 +405,7 @@ async def get_recent_grok_accounts(limit: int = 20):
     with get_db() as db:
         accounts = (
             db.query(Account)
-            .filter(Account.email_service == "grok")
+            .filter((Account.platform == "grok") | (Account.email_service == "grok"))
             .order_by(Account.created_at.desc())
             .limit(limit)
             .all()
