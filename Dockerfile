@@ -48,4 +48,5 @@ EXPOSE 1455
 
 # 启动 WebUI
 # Dokploy 运行时当前目录会落到 /，这里使用绝对路径避免找不到入口脚本。
-CMD ["xvfb-run", "-a", "python", "/app/webui.py"]
+# 直接拉起 Xvfb 并 exec Python，避免 xvfb-run 包装器残留而服务进程未真正启动。
+CMD ["/bin/sh", "-lc", "Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp >/tmp/xvfb.log 2>&1 & export DISPLAY=:99 && exec python /app/webui.py"]
