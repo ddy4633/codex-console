@@ -164,6 +164,27 @@
             display: block;
         }
 
+        .form-advanced {
+            margin-top: var(--spacing-sm);
+            border: 1px solid var(--border-light);
+            border-radius: var(--radius);
+            padding: var(--spacing-sm) var(--spacing-md);
+            background: var(--surface-hover);
+        }
+
+        .form-advanced summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 0.8125rem;
+            line-height: 1.5;
+            outline: none;
+        }
+
+        .form-advanced .form-group {
+            margin-top: var(--spacing-sm);
+        }
+
         .form-tip {
             color: var(--text-muted);
             font-size: 0.75rem;
@@ -386,16 +407,6 @@
                                     </div>
 
                                     <div class="form-group">
-                                        <label for="grok-vibemail-jwt">Vibemail JWT</label>
-                                        <input type="text" id="grok-vibemail-jwt" placeholder="留空则读取系统设置 grok.vibemail_user_jwt">
-                                    </div>
-
-                                    <div class="form-group">
-                                        <label for="grok-vibemail-api">Vibemail API</label>
-                                        <input type="text" id="grok-vibemail-api" placeholder="留空则读取系统设置 grok.vibemail_api">
-                                    </div>
-
-                                    <div class="form-group">
                                         <label for="grok-reg-mode">注册模式</label>
                                         <select id="grok-reg-mode" name="grok_reg_mode">
                                             <option value="single">单次注册</option>
@@ -425,35 +436,49 @@
                                         <input type="text" id="grok-password" placeholder="留空则优先读取系统设置 grok.default_password，再为空时自动生成">
                                     </div>
 
-                                    <div class="form-group">
-                                        <label for="grok-proxy">代理 URL</label>
-                                        <input type="text" id="grok-proxy" placeholder="http://user:pass@host:port">
-                                    </div>
+                                    <details class="form-advanced" id="grok-advanced">
+                                        <summary>高级参数（可选，默认复用系统配置）</summary>
+                                        <div class="form-group">
+                                            <label for="grok-proxy">代理 URL</label>
+                                            <input type="text" id="grok-proxy" placeholder="http://user:pass@host:port">
+                                        </div>
 
-                                    <div class="form-group">
-                                        <label for="grok-user-data-dir">浏览器用户目录</label>
-                                        <input type="text" id="grok-user-data-dir" placeholder="例如：/data/grok-profile">
-                                    </div>
+                                        <div class="form-group">
+                                            <label for="grok-vibemail-jwt">Vibemail JWT</label>
+                                            <input type="text" id="grok-vibemail-jwt" placeholder="留空则读取系统设置 grok.vibemail_user_jwt">
+                                        </div>
 
-                                    <div class="form-group">
-                                        <label for="grok-user-agent">User-Agent</label>
-                                        <input type="text" id="grok-user-agent" placeholder="可选，自定义浏览器 UA">
-                                    </div>
+                                        <div class="form-group">
+                                            <label for="grok-vibemail-api">Vibemail API</label>
+                                            <input type="text" id="grok-vibemail-api" placeholder="留空则读取系统设置 grok.vibemail_api">
+                                        </div>
 
-                                    <div class="form-group">
-                                        <label for="grok-cf-clearance">cf_clearance</label>
-                                        <input type="text" id="grok-cf-clearance" placeholder="可选，Cloudflare clearance">
-                                    </div>
+                                        <div class="form-group">
+                                            <label for="grok-user-data-dir">浏览器用户目录</label>
+                                            <input type="text" id="grok-user-data-dir" placeholder="例如：/data/grok-profile">
+                                        </div>
 
-                                    <div class="form-group">
-                                        <label for="grok-cf-bm">__cf_bm</label>
-                                        <input type="text" id="grok-cf-bm" placeholder="可选，Cloudflare __cf_bm">
-                                    </div>
+                                        <div class="form-group">
+                                            <label for="grok-user-agent">User-Agent</label>
+                                            <input type="text" id="grok-user-agent" placeholder="可选，自定义浏览器 UA">
+                                        </div>
 
-                                    <div class="form-group">
-                                        <label for="grok-cf-cookie">完整 Cookie 头</label>
-                                        <textarea id="grok-cf-cookie" rows="3" placeholder="可选，例如 cf_clearance=...; __cf_bm=..."></textarea>
-                                    </div>
+                                        <div class="form-group">
+                                            <label for="grok-cf-clearance">cf_clearance</label>
+                                            <input type="text" id="grok-cf-clearance" placeholder="可选，Cloudflare clearance">
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="grok-cf-bm">__cf_bm</label>
+                                            <input type="text" id="grok-cf-bm" placeholder="可选，Cloudflare __cf_bm">
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="grok-cf-cookie">完整 Cookie 头</label>
+                                            <textarea id="grok-cf-cookie" rows="3" placeholder="可选，例如 cf_clearance=...; __cf_bm=..."></textarea>
+                                        </div>
+                                        <div class="form-tip">高级参数优先级高于系统配置。</div>
+                                    </details>
 
                                     <div class="form-actions" style="flex-direction: column;">
                                         <button type="submit" class="btn btn-primary btn-lg" id="grok-start-btn" style="width: 100%;">

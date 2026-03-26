@@ -949,10 +949,13 @@ function buildGrokRequestData() {
 
     const requestData = {
         email_service_type: emailServiceType,
-        proxy: trimValue(elements.grokProxy.value) || null,
-        password: trimValue(elements.grokPassword.value) || null,
-        vibemail_user_jwt: trimValue(elements.grokVibemailJwt.value) || null,
-        vibemail_api: trimValue(elements.grokVibemailApi.value) || null,
+    };
+
+    const optionalInputs = {
+        proxy: trimValue(elements.grokProxy.value),
+        password: trimValue(elements.grokPassword.value),
+        vibemail_user_jwt: trimValue(elements.grokVibemailJwt.value),
+        vibemail_api: trimValue(elements.grokVibemailApi.value),
         user_data_dir: trimValue(elements.grokUserDataDir.value),
         user_agent: trimValue(elements.grokUserAgent.value),
         cf_clearance: trimValue(elements.grokCfClearance.value),
@@ -960,8 +963,17 @@ function buildGrokRequestData() {
         cf_cookie_header: trimValue(elements.grokCfCookie.value),
     };
 
+    Object.entries(optionalInputs).forEach(([key, value]) => {
+        if (value) {
+            requestData[key] = value;
+        }
+    });
+
     if (serviceId && serviceId !== 'default') {
-        requestData.email_service_id = parseInt(serviceId, 10);
+        const parsedServiceId = parseInt(serviceId, 10);
+        if (!Number.isNaN(parsedServiceId)) {
+            requestData.email_service_id = parsedServiceId;
+        }
     }
 
     if (elements.grokRegMode.value === 'batch') {
