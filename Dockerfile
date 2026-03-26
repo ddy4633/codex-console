@@ -47,4 +47,5 @@ COPY . .
 EXPOSE 1455
 
 # 启动 WebUI
-CMD ["xvfb-run", "-a", "python", "webui.py"]
+# Dokploy 运行时当前目录会落到 /，这里使用绝对路径避免找不到入口脚本。
+CMD ["xvfb-run", "-a", "python", "/app/webui.py"]
