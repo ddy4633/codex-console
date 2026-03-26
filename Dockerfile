@@ -22,6 +22,7 @@ RUN apt-get update \
         chromium \
         chromium-driver \
         xvfb \
+        xauth \
         fonts-liberation \
         libnss3 \
         libatk-bridge2.0-0 \
