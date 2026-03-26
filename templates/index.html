@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>注册控制台 - OpenAI 注册系统</title>
+    <title>注册控制台 - OpenAI / Grok 注册系统</title>
     <link rel="stylesheet" href="/static/css/style.css?v={{ static_version }}">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
     <style>
@@ -130,6 +130,47 @@
         .msd-item input[type=checkbox] { margin: 0; cursor: pointer; }
         .msd-empty { padding: 8px 12px; color: var(--text-muted); font-size: 0.8rem; }
 
+        .registration-tabs {
+            display: inline-flex;
+            padding: 4px;
+            gap: 4px;
+            border-radius: 999px;
+            background: var(--surface-hover);
+        }
+
+        .registration-tab {
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .registration-tab.active {
+            background: var(--primary-color);
+            color: #fff;
+            box-shadow: 0 6px 14px rgba(31, 111, 235, 0.2);
+        }
+
+        .registration-panel {
+            display: none;
+        }
+
+        .registration-panel.active {
+            display: block;
+        }
+
+        .form-tip {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            line-height: 1.5;
+            margin-top: var(--spacing-sm);
+        }
+
         /* 响应式 */
         @media (max-width: 1024px) {
             .two-column-layout {
@@ -138,6 +179,22 @@
 
             .left-panel {
                 position: static;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .card-header {
+                gap: var(--spacing-sm);
+                align-items: flex-start;
+            }
+
+            .registration-tabs {
+                width: 100%;
+            }
+
+            .registration-tab {
+                flex: 1;
+                text-align: center;
             }
         }
     </style>
@@ -151,7 +208,7 @@
             </div>
             <div class="nav-links">
                 <a href="/" class="nav-link active">注册</a>
-                <a href="/grok" class="nav-link">Grok</a>
+                <a href="/?tab=grok" class="nav-link">Grok</a>
                 <a href="/accounts" class="nav-link">账号管理</a>
                 <a href="/email-services" class="nav-link">邮箱服务</a>
                 <a href="/payment" class="nav-link">支付</a>
@@ -171,8 +228,13 @@
                     <div class="card">
                         <div class="card-header">
                             <h3>📝 注册设置</h3>
+                            <div class="registration-tabs" role="tablist" aria-label="注册类型切换">
+                                <button type="button" class="registration-tab active" id="tab-openai" data-provider="openai">OpenAI 注册</button>
+                                <button type="button" class="registration-tab" id="tab-grok" data-provider="grok">Grok 注册</button>
+                            </div>
                         </div>
                         <div class="card-body">
+                            <div class="registration-panel active" id="openai-panel" data-provider-panel="openai">
                             <form id="registration-form">
                                 <div class="form-group">
                                     <label for="email-service">邮箱服务</label>
@@ -313,6 +375,97 @@
                                     </button>
                                 </div>
                             </form>
+                            </div>
+
+                            <div class="registration-panel" id="grok-panel" data-provider-panel="grok">
+                                <form id="grok-form">
+                                    <div class="form-group">
+                                        <label for="grok-email-service">邮箱服务</label>
+                                        <select id="grok-email-service" name="grok_email_service" required></select>
+                                        <div class="form-tip">支持数据库里的邮箱服务，也支持直接走本地 Grok 脚本使用的 Vibemail JWT。</div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-vibemail-jwt">Vibemail JWT</label>
+                                        <input type="text" id="grok-vibemail-jwt" placeholder="留空则读取系统设置 grok.vibemail_user_jwt">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-vibemail-api">Vibemail API</label>
+                                        <input type="text" id="grok-vibemail-api" placeholder="留空则读取系统设置 grok.vibemail_api">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-reg-mode">注册模式</label>
+                                        <select id="grok-reg-mode" name="grok_reg_mode">
+                                            <option value="single">单次注册</option>
+                                            <option value="batch">批量注册</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-group" id="grok-batch-count-group" style="display: none;">
+                                        <label for="grok-batch-count">注册数量 (1-100)</label>
+                                        <input type="number" id="grok-batch-count" min="1" max="100" value="3">
+                                    </div>
+
+                                    <div id="grok-batch-options" style="display: none;">
+                                        <div class="form-group">
+                                            <label for="grok-interval-min">最小间隔 (秒)</label>
+                                            <input type="number" id="grok-interval-min" min="0" max="600" value="20">
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="grok-interval-max">最大间隔 (秒)</label>
+                                            <input type="number" id="grok-interval-max" min="1" max="1200" value="60">
+                                        </div>
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-password">注册密码</label>
+                                        <input type="text" id="grok-password" placeholder="留空则优先读取系统设置 grok.default_password，再为空时自动生成">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-proxy">代理 URL</label>
+                                        <input type="text" id="grok-proxy" placeholder="http://user:pass@host:port">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-user-data-dir">浏览器用户目录</label>
+                                        <input type="text" id="grok-user-data-dir" placeholder="例如：/data/grok-profile">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-user-agent">User-Agent</label>
+                                        <input type="text" id="grok-user-agent" placeholder="可选，自定义浏览器 UA">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-cf-clearance">cf_clearance</label>
+                                        <input type="text" id="grok-cf-clearance" placeholder="可选，Cloudflare clearance">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-cf-bm">__cf_bm</label>
+                                        <input type="text" id="grok-cf-bm" placeholder="可选，Cloudflare __cf_bm">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="grok-cf-cookie">完整 Cookie 头</label>
+                                        <textarea id="grok-cf-cookie" rows="3" placeholder="可选，例如 cf_clearance=...; __cf_bm=..."></textarea>
+                                    </div>
+
+                                    <div class="form-actions" style="flex-direction: column;">
+                                        <button type="submit" class="btn btn-primary btn-lg" id="grok-start-btn" style="width: 100%;">
+                                            ⚡ 开始注册
+                                        </button>
+                                        <button type="button" class="btn btn-secondary" id="grok-cancel-btn" disabled style="width: 100%;">
+                                            取消任务
+                                        </button>
+                                    </div>
+                                </form>
+                                <div class="form-tip">Grok 依赖浏览器执行，速度会明显慢于普通邮箱注册。这里复用的是本地脚本链路，不改注册核心逻辑。</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -375,7 +528,7 @@
                     <!-- 已注册账号列表 -->
                     <div class="card">
                         <div class="card-header">
-                            <h3>📋 已注册账号</h3>
+                            <h3 id="accounts-panel-title">📋 已注册账号</h3>
                             <div style="display: flex; gap: var(--spacing-sm);">
                                 <button class="btn btn-ghost btn-sm" id="refresh-accounts-btn">🔄 刷新</button>
                                 <a href="/accounts" class="btn btn-secondary btn-sm">查看全部</a>

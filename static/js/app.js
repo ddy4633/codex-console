@@ -36,9 +36,19 @@ let wsHeartbeatInterval = null;  // 心跳定时器
 let batchWsHeartbeatInterval = null;  // 批量任务心跳定时器
 let activeTaskUuid = null;   // 当前活跃的单任务 UUID（用于页面重新可见时重连）
 let activeBatchId = null;    // 当前活跃的批量任务 ID（用于页面重新可见时重连）
+let activeProvider = 'openai';  // 当前激活的注册标签
+let grokCurrentTaskUuid = null;
+let grokCurrentBatchId = null;
+let grokTaskPoller = null;
+let grokBatchPoller = null;
+let grokSelectedServiceLabel = 'Vibemail JWT / 系统设置';
 
 // DOM 元素
 const elements = {
+    registrationTabs: Array.from(document.querySelectorAll('.registration-tab')),
+    registrationPanels: Array.from(document.querySelectorAll('[data-provider-panel]')),
+    openaiPanel: document.getElementById('openai-panel'),
+    grokPanel: document.getElementById('grok-panel'),
     form: document.getElementById('registration-form'),
     emailService: document.getElementById('email-service'),
     regMode: document.getElementById('reg-mode'),
@@ -68,6 +78,7 @@ const elements = {
     batchFailed: document.getElementById('batch-failed'),
     batchRemaining: document.getElementById('batch-remaining'),
     // 已注册账号
+    accountsPanelTitle: document.getElementById('accounts-panel-title'),
     recentAccountsTable: document.getElementById('recent-accounts-table'),
     refreshAccountsBtn: document.getElementById('refresh-accounts-btn'),
     // Outlook 批量注册
@@ -95,16 +106,38 @@ const elements = {
     autoUploadTm: document.getElementById('auto-upload-tm'),
     tmServiceSelectGroup: document.getElementById('tm-service-select-group'),
     tmServiceSelect: document.getElementById('tm-service-select'),
+    // Grok
+    grokForm: document.getElementById('grok-form'),
+    grokEmailService: document.getElementById('grok-email-service'),
+    grokVibemailJwt: document.getElementById('grok-vibemail-jwt'),
+    grokVibemailApi: document.getElementById('grok-vibemail-api'),
+    grokRegMode: document.getElementById('grok-reg-mode'),
+    grokBatchCountGroup: document.getElementById('grok-batch-count-group'),
+    grokBatchOptions: document.getElementById('grok-batch-options'),
+    grokBatchCount: document.getElementById('grok-batch-count'),
+    grokIntervalMin: document.getElementById('grok-interval-min'),
+    grokIntervalMax: document.getElementById('grok-interval-max'),
+    grokPassword: document.getElementById('grok-password'),
+    grokProxy: document.getElementById('grok-proxy'),
+    grokUserDataDir: document.getElementById('grok-user-data-dir'),
+    grokUserAgent: document.getElementById('grok-user-agent'),
+    grokCfClearance: document.getElementById('grok-cf-clearance'),
+    grokCfBm: document.getElementById('grok-cf-bm'),
+    grokCfCookie: document.getElementById('grok-cf-cookie'),
+    grokStartBtn: document.getElementById('grok-start-btn'),
+    grokCancelBtn: document.getElementById('grok-cancel-btn'),
 };
 
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
+    initRegistrationTabs();
     loadAvailableServices();
     loadRecentAccounts();
     startAccountsPolling();
     initVisibilityReconnect();
     restoreActiveTask();
+    restoreActiveGrokTask();
     initAutoUploadOptions();
 });
 
@@ -190,15 +223,18 @@ function getSelectedServiceIds(container) {
 function initEventListeners() {
     // 注册表单提交
     elements.form.addEventListener('submit', handleStartRegistration);
+    elements.grokForm.addEventListener('submit', handleStartGrokRegistration);
 
     // 注册模式切换
     elements.regMode.addEventListener('change', handleModeChange);
+    elements.grokRegMode.addEventListener('change', handleGrokModeChange);
 
     // 邮箱服务切换
     elements.emailService.addEventListener('change', handleServiceChange);
 
     // 取消按钮
     elements.cancelBtn.addEventListener('click', handleCancelTask);
+    elements.grokCancelBtn.addEventListener('click', handleCancelGrokTask);
 
     // 清空日志
     elements.clearLogBtn.addEventListener('click', () => {
@@ -219,6 +255,44 @@ function initEventListeners() {
     elements.outlookConcurrencyMode.addEventListener('change', () => {
         handleConcurrencyModeChange(elements.outlookConcurrencyMode, elements.outlookConcurrencyHint, elements.outlookIntervalGroup);
     });
+
+    elements.registrationTabs.forEach((tab) => {
+        tab.addEventListener('click', () => switchRegistrationTab(tab.dataset.provider));
+    });
+}
+
+function initRegistrationTabs() {
+    const params = new URLSearchParams(window.location.search);
+    const provider = params.get('tab') === 'grok' ? 'grok' : 'openai';
+    switchRegistrationTab(provider, false);
+}
+
+function switchRegistrationTab(provider, syncHistory = true) {
+    activeProvider = provider === 'grok' ? 'grok' : 'openai';
+
+    elements.registrationTabs.forEach((tab) => {
+        tab.classList.toggle('active', tab.dataset.provider === activeProvider);
+    });
+
+    elements.registrationPanels.forEach((panel) => {
+        panel.classList.toggle('active', panel.dataset.providerPanel === activeProvider);
+    });
+
+    if (elements.accountsPanelTitle) {
+        elements.accountsPanelTitle.textContent = activeProvider === 'grok' ? '📦 最近注册的 Grok 账号' : '📋 已注册账号';
+    }
+
+    if (syncHistory) {
+        const url = new URL(window.location.href);
+        if (activeProvider === 'grok') {
+            url.searchParams.set('tab', 'grok');
+        } else {
+            url.searchParams.delete('tab');
+        }
+        window.history.replaceState({}, '', url);
+    }
+
+    loadRecentAccounts();
 }
 
 // 加载可用的邮箱服务
@@ -229,6 +303,7 @@ async function loadAvailableServices() {
 
         // 更新邮箱服务选择框
         updateEmailServiceOptions();
+        updateGrokEmailServiceOptions();
 
         addLog('info', '[系统] 邮箱服务列表已加载');
     } catch (error) {
@@ -392,6 +467,46 @@ function updateEmailServiceOptions() {
     }
 }
 
+function updateGrokEmailServiceOptions() {
+    const select = elements.grokEmailService;
+    if (!select) return;
+
+    select.innerHTML = '';
+
+    const vibemailGroup = document.createElement('optgroup');
+    vibemailGroup.label = '本地 Grok (Vibemail)';
+    const vibemailOption = document.createElement('option');
+    vibemailOption.value = 'vibemail:default';
+    vibemailOption.textContent = 'Vibemail JWT / 系统设置';
+    vibemailGroup.appendChild(vibemailOption);
+    select.appendChild(vibemailGroup);
+
+    const serviceOrder = ['tempmail', 'imap_mail', 'temp_mail', 'duck_mail', 'freemail', 'moe_mail', 'outlook'];
+    serviceOrder.forEach((serviceType) => {
+        const item = availableServices[serviceType];
+        if (!item || !item.available || !Array.isArray(item.services) || item.services.length === 0) {
+            return;
+        }
+
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = `${getServiceTypeText(serviceType)} (${item.count || item.services.length})`;
+
+        item.services.forEach((service) => {
+            const option = document.createElement('option');
+            option.value = `${serviceType}:${service.id || 'default'}`;
+            const extras = [];
+            if (service.email) extras.push(service.email);
+            if (service.host) extras.push(service.host);
+            if (service.domain) extras.push(`@${service.domain}`);
+            if (service.default_domain) extras.push(`@${service.default_domain}`);
+            option.textContent = extras.length > 0 ? `${service.name} (${extras.join(' | ')})` : service.name;
+            optgroup.appendChild(option);
+        });
+
+        select.appendChild(optgroup);
+    });
+}
+
 // 处理邮箱服务切换
 function handleServiceChange(e) {
     const value = e.target.value;
@@ -457,6 +572,12 @@ function handleModeChange(e) {
     elements.batchOptions.style.display = isBatchMode ? 'block' : 'none';
 }
 
+function handleGrokModeChange() {
+    const isBatch = elements.grokRegMode.value === 'batch';
+    elements.grokBatchCountGroup.style.display = isBatch ? 'block' : 'none';
+    elements.grokBatchOptions.style.display = isBatch ? 'block' : 'none';
+}
+
 // 并发模式切换（批量）
 function handleConcurrencyModeChange(selectEl, hintEl, intervalGroupEl) {
     const mode = selectEl.value;
@@ -472,6 +593,11 @@ function handleConcurrencyModeChange(selectEl, hintEl, intervalGroupEl) {
 // 开始注册
 async function handleStartRegistration(e) {
     e.preventDefault();
+
+    if (grokCurrentTaskUuid || grokCurrentBatchId) {
+        toast.warning('当前有 Grok 任务在运行，请先等待完成或取消');
+        return;
+    }
 
     const selectedValue = elements.emailService.value;
     if (!selectedValue) {
@@ -718,6 +844,256 @@ async function handleBatchRegistration(requestData) {
     }
 }
 
+function getSelectedGrokServiceMeta() {
+    const selectedValue = elements.grokEmailService.value;
+    const selectedOption = elements.grokEmailService.options[elements.grokEmailService.selectedIndex];
+    return {
+        selectedValue,
+        label: selectedOption ? selectedOption.textContent.trim() : 'Grok'
+    };
+}
+
+function buildGrokRequestData() {
+    const { selectedValue, label } = getSelectedGrokServiceMeta();
+    if (!selectedValue) {
+        throw new Error('请选择一个 Grok 邮箱服务');
+    }
+
+    const [emailServiceType, serviceId] = selectedValue.split(':');
+    grokSelectedServiceLabel = label;
+
+    const requestData = {
+        email_service_type: emailServiceType,
+        proxy: elements.grokProxy.value.trim() || null,
+        password: elements.grokPassword.value.trim() || null,
+        vibemail_user_jwt: elements.grokVibemailJwt.value.trim() || null,
+        vibemail_api: elements.grokVibemailApi.value.trim() || null,
+        user_data_dir: elements.grokUserDataDir.value.trim(),
+        user_agent: elements.grokUserAgent.value.trim(),
+        cf_clearance: elements.grokCfClearance.value.trim(),
+        cf_bm: elements.grokCfBm.value.trim(),
+        cf_cookie_header: elements.grokCfCookie.value.trim(),
+    };
+
+    if (serviceId && serviceId !== 'default') {
+        requestData.email_service_id = parseInt(serviceId, 10);
+    }
+
+    if (elements.grokRegMode.value === 'batch') {
+        requestData.count = parseInt(elements.grokBatchCount.value, 10) || 1;
+        requestData.interval_min = parseInt(elements.grokIntervalMin.value, 10) || 0;
+        requestData.interval_max = parseInt(elements.grokIntervalMax.value, 10) || requestData.interval_min;
+    }
+
+    return requestData;
+}
+
+function setGrokButtonsState(startDisabled, cancelDisabled) {
+    elements.grokStartBtn.disabled = startDisabled;
+    elements.grokCancelBtn.disabled = cancelDisabled;
+}
+
+function clearGrokSessionState() {
+    sessionStorage.removeItem('activeGrokTask');
+    grokCurrentTaskUuid = null;
+    grokCurrentBatchId = null;
+}
+
+function stopGrokPollers() {
+    if (grokTaskPoller) {
+        clearInterval(grokTaskPoller);
+        grokTaskPoller = null;
+    }
+    if (grokBatchPoller) {
+        clearInterval(grokBatchPoller);
+        grokBatchPoller = null;
+    }
+}
+
+function finishGrokRun() {
+    stopGrokPollers();
+    setGrokButtonsState(false, true);
+    clearGrokSessionState();
+    loadRecentAccounts();
+}
+
+async function handleStartGrokRegistration(e) {
+    e.preventDefault();
+
+    if (currentTask || currentBatch) {
+        toast.warning('当前有 OpenAI 注册任务在运行，请先等待完成或取消');
+        return;
+    }
+    if (grokCurrentTaskUuid || grokCurrentBatchId) {
+        toast.warning('当前已有 Grok 任务在运行');
+        return;
+    }
+
+    let requestData;
+    try {
+        requestData = buildGrokRequestData();
+    } catch (error) {
+        toast.error(error.message);
+        return;
+    }
+
+    stopGrokPollers();
+    displayedLogs.clear();
+    elements.consoleLog.innerHTML = '';
+    elements.taskStatusRow.style.display = 'none';
+    elements.batchProgressSection.style.display = 'none';
+    elements.taskStatusBadge.style.display = 'none';
+    setGrokButtonsState(true, false);
+    switchRegistrationTab('grok');
+
+    if (elements.grokRegMode.value === 'batch') {
+        await handleBatchGrokRegistration(requestData);
+    } else {
+        await handleSingleGrokRegistration(requestData);
+    }
+}
+
+async function handleSingleGrokRegistration(requestData) {
+    addLog('info', '[系统] 正在启动 Grok 注册任务...');
+
+    try {
+        const data = await api.post('/grok/start', requestData);
+        grokCurrentTaskUuid = data.task_uuid;
+        sessionStorage.setItem('activeGrokTask', JSON.stringify({
+            provider: 'grok',
+            mode: 'single',
+            task_uuid: data.task_uuid,
+            service_label: grokSelectedServiceLabel,
+        }));
+
+        showTaskStatus(data);
+        elements.taskService.textContent = grokSelectedServiceLabel;
+        updateTaskStatus(data.status || 'pending');
+        addLog('info', `[系统] Grok 任务已创建: ${data.task_uuid}`);
+        await pollGrokTask();
+        grokTaskPoller = setInterval(pollGrokTask, 2000);
+    } catch (error) {
+        addLog('error', `[错误] 启动 Grok 任务失败: ${error.message}`);
+        toast.error(error.message);
+        setGrokButtonsState(false, true);
+    }
+}
+
+async function handleBatchGrokRegistration(requestData) {
+    addLog('info', `[系统] 正在启动 Grok 批量任务 (数量: ${requestData.count})...`);
+
+    try {
+        const data = await api.post('/grok/batch-start', requestData);
+        grokCurrentBatchId = data.batch_id;
+        sessionStorage.setItem('activeGrokTask', JSON.stringify({
+            provider: 'grok',
+            mode: 'batch',
+            batch_id: data.batch_id,
+            total: data.count,
+            service_label: grokSelectedServiceLabel,
+        }));
+
+        showBatchStatus({ count: data.count });
+        elements.taskService.textContent = grokSelectedServiceLabel;
+        addLog('info', `[系统] Grok 批量任务已创建: ${data.batch_id}`);
+        await pollGrokBatch();
+        grokBatchPoller = setInterval(pollGrokBatch, 2500);
+    } catch (error) {
+        addLog('error', `[错误] 启动 Grok 批量任务失败: ${error.message}`);
+        toast.error(error.message);
+        setGrokButtonsState(false, true);
+    }
+}
+
+async function pollGrokTask() {
+    if (!grokCurrentTaskUuid) return;
+
+    try {
+        const data = await api.get(`/grok/tasks/${grokCurrentTaskUuid}`);
+        showTaskStatus(data);
+        elements.taskService.textContent = grokSelectedServiceLabel;
+        updateTaskStatus(data.status || 'pending');
+
+        if (data.result?.email) {
+            elements.taskEmail.textContent = data.result.email;
+        }
+
+        for (const log of data.logs || []) {
+            addLog(getLogType(log), log);
+        }
+
+        if (['completed', 'failed', 'cancelled'].includes(data.status)) {
+            if (data.status === 'completed') {
+                toast.success('Grok 注册成功');
+            } else if (data.status === 'failed') {
+                toast.error('Grok 注册失败');
+            } else {
+                toast.info('Grok 任务已取消');
+            }
+            finishGrokRun();
+        }
+    } catch (error) {
+        addLog('error', `[错误] 获取 Grok 任务状态失败: ${error.message}`);
+        finishGrokRun();
+    }
+}
+
+async function pollGrokBatch() {
+    if (!grokCurrentBatchId) return;
+
+    try {
+        const data = await api.get(`/grok/batches/${grokCurrentBatchId}`);
+        updateBatchProgress(data);
+        elements.taskService.textContent = grokSelectedServiceLabel;
+
+        for (const log of data.logs || []) {
+            addLog(getLogType(log), log);
+        }
+
+        const completedTask = (data.tasks || []).findLast?.((task) => task.result?.email);
+        if (completedTask?.result?.email) {
+            elements.taskEmail.textContent = completedTask.result.email;
+        }
+
+        if (data.finished || ['completed', 'cancelled'].includes(data.status)) {
+            if ((data.success || 0) > 0) {
+                toast.success(`Grok 批量任务完成，成功 ${data.success} 个`);
+            } else if (data.status === 'cancelled') {
+                toast.info('Grok 批量任务已取消');
+            } else {
+                toast.warning('Grok 批量任务完成，但没有成功注册任何账号');
+            }
+            finishGrokRun();
+        }
+    } catch (error) {
+        addLog('error', `[错误] 获取 Grok 批量状态失败: ${error.message}`);
+        finishGrokRun();
+    }
+}
+
+async function handleCancelGrokTask() {
+    if (!grokCurrentTaskUuid && !grokCurrentBatchId) {
+        toast.warning('当前没有活动的 Grok 任务');
+        return;
+    }
+
+    elements.grokCancelBtn.disabled = true;
+    addLog('warning', '[警告] 正在提交 Grok 取消请求...');
+
+    try {
+        if (grokCurrentTaskUuid) {
+            await api.post(`/grok/tasks/${grokCurrentTaskUuid}/cancel`);
+        } else if (grokCurrentBatchId) {
+            await api.post(`/grok/batches/${grokCurrentBatchId}/cancel`);
+        }
+        toast.info('Grok 任务取消请求已提交');
+    } catch (error) {
+        addLog('error', `[错误] 取消 Grok 任务失败: ${error.message}`);
+        toast.error(error.message);
+        elements.grokCancelBtn.disabled = false;
+    }
+}
+
 // 取消任务
 async function handleCancelTask() {
     // 禁用取消按钮，防止重复点击
@@ -950,7 +1326,10 @@ function updateBatchProgress(data) {
 // 加载最近注册的账号
 async function loadRecentAccounts() {
     try {
-        const data = await api.get('/accounts?page=1&page_size=10');
+        const endpoint = activeProvider === 'grok'
+            ? '/grok/recent-accounts?limit=10'
+            : '/accounts?page=1&page_size=10';
+        const data = await api.get(endpoint);
 
         if (data.accounts.length === 0) {
             elements.recentAccountsTable.innerHTML = `
@@ -1469,7 +1848,11 @@ async function restoreActiveTask() {
         return;
     }
 
-    const { mode, task_uuid, batch_id, total } = state;
+    const { provider, mode, task_uuid, batch_id, total } = state;
+
+    if (provider === 'grok') {
+        return;
+    }
 
     if (mode === 'single' && task_uuid) {
         // 查询任务是否仍在运行
@@ -1523,5 +1906,60 @@ async function restoreActiveTask() {
         } catch {
             sessionStorage.removeItem('activeTask');
         }
+    }
+}
+
+async function restoreActiveGrokTask() {
+    const saved = sessionStorage.getItem('activeGrokTask');
+    if (!saved) return;
+
+    let state;
+    try {
+        state = JSON.parse(saved);
+    } catch {
+        sessionStorage.removeItem('activeGrokTask');
+        return;
+    }
+
+    const { mode, task_uuid, batch_id, total, service_label } = state;
+    grokSelectedServiceLabel = service_label || grokSelectedServiceLabel;
+    switchRegistrationTab('grok');
+    setGrokButtonsState(true, false);
+    displayedLogs.clear();
+    elements.consoleLog.innerHTML = '';
+
+    try {
+        if (mode === 'single' && task_uuid) {
+            const data = await api.get(`/grok/tasks/${task_uuid}`);
+            if (['completed', 'failed', 'cancelled'].includes(data.status)) {
+                finishGrokRun();
+                return;
+            }
+
+            grokCurrentTaskUuid = task_uuid;
+            showTaskStatus(data);
+            elements.taskService.textContent = grokSelectedServiceLabel;
+            updateTaskStatus(data.status || 'pending');
+            addLog('info', `[系统] 检测到进行中的 Grok 任务，正在恢复监控... (${task_uuid.substring(0, 8)})`);
+            await pollGrokTask();
+            grokTaskPoller = setInterval(pollGrokTask, 2000);
+        } else if (mode === 'batch' && batch_id) {
+            const data = await api.get(`/grok/batches/${batch_id}`);
+            if (data.finished) {
+                finishGrokRun();
+                return;
+            }
+
+            grokCurrentBatchId = batch_id;
+            showBatchStatus({ count: total || data.total || 0 });
+            elements.taskService.textContent = grokSelectedServiceLabel;
+            addLog('info', `[系统] 检测到进行中的 Grok 批量任务，正在恢复监控... (${batch_id.substring(0, 8)})`);
+            await pollGrokBatch();
+            grokBatchPoller = setInterval(pollGrokBatch, 2500);
+        } else {
+            sessionStorage.removeItem('activeGrokTask');
+        }
+    } catch {
+        finishGrokRun();
     }
 }
