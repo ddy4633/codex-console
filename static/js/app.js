@@ -133,6 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
     initRegistrationTabs();
     loadAvailableServices();
+    loadGrokDefaults();
     loadRecentAccounts();
     startAccountsPolling();
     initVisibilityReconnect();
@@ -309,6 +310,34 @@ async function loadAvailableServices() {
     } catch (error) {
         console.error('加载邮箱服务列表失败:', error);
         addLog('warning', '[警告] 加载邮箱服务列表失败');
+    }
+}
+
+async function loadGrokDefaults() {
+    try {
+        const defaults = await api.get('/grok/defaults');
+
+        if (!elements.grokPassword.value.trim() && defaults.default_password) {
+            elements.grokPassword.value = defaults.default_password;
+        }
+
+        if (!elements.grokPassword.value.trim() && defaults.password_length) {
+            elements.grokPassword.placeholder = `未填写则自动生成 ${defaults.password_length} 位密码`;
+        }
+
+        if (!elements.grokProxy.value.trim() && defaults.proxy) {
+            elements.grokProxy.value = defaults.proxy;
+        }
+
+        if (!elements.grokVibemailJwt.value.trim() && defaults.vibemail_user_jwt) {
+            elements.grokVibemailJwt.value = defaults.vibemail_user_jwt;
+        }
+
+        if (!elements.grokVibemailApi.value.trim() && defaults.vibemail_api) {
+            elements.grokVibemailApi.value = defaults.vibemail_api;
+        }
+    } catch (error) {
+        console.error('加载 Grok 默认配置失败:', error);
     }
 }
 

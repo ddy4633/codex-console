@@ -15,6 +15,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from ...config.constants import EmailServiceType
+from ...core.utils import generate_password
 from ...config.settings import get_settings
 from ...core.grok import GrokRegistrationEngine
 from ...database import crud
@@ -27,6 +28,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 grok_batches: Dict[str, dict] = {}
+
+
+def _get_db_setting(db, key: str, default: str = "") -> str:
+    """从数据库读取系统设置（兼容空字符串）。"""
+    setting = crud.get_setting(db, key)
+    return setting.value.strip() if setting and setting.value else default
+
+
+def get_proxy_for_grok_registration(db) -> tuple[Optional[str], Optional[int]]:
+    """
+    获取用于 Grok 注册的代理。
+
+    复用 OpenAI 注册的代理策略：
+    1. 优先随机数据库代理；
+    2. 再尝试动态代理；
+    3. 最后回退到系统静态代理。
+
+    Returns:
+        Tuple[proxy_url, proxy_id]: 代理 URL 与代理列表中的 ID（若来源于数据库代理）
+    """
+    proxy = crud.get_random_proxy(db)
+    if proxy:
+        return proxy.proxy_url, proxy.id
+
+    from ...core.dynamic_proxy import get_proxy_url_for_task
+
+    proxy_url = get_proxy_url_for_task()
+    if proxy_url:
+        return proxy_url, None
+
+    return None, None
 
 
 class GrokTaskCreate(BaseModel):
@@ -86,7 +118,7 @@ def task_to_response(task: RegistrationTask) -> GrokTaskResponse:
     )
 
 
-def _build_service(request: GrokTaskCreate):
+def _build_service(request: GrokTaskCreate, proxy_url: Optional[str] = None):
     try:
         service_type = EmailServiceType(request.email_service_type)
     except ValueError as exc:
@@ -101,8 +133,8 @@ def _build_service(request: GrokTaskCreate):
             "timeout": settings.tempmail_timeout,
             "max_retries": settings.tempmail_max_retries,
         }
-        if request.proxy:
-            config["proxy_url"] = request.proxy
+        if proxy_url:
+            config["proxy_url"] = proxy_url
         return service_type, None, config, service_name
 
     if service_type == EmailServiceType.VIBEMAIL:
@@ -119,8 +151,8 @@ def _build_service(request: GrokTaskCreate):
             "user_jwt": jwt,
             "api_base": api,
         }
-        if request.proxy:
-            config["proxy_url"] = request.proxy
+        if proxy_url:
+            config["proxy_url"] = proxy_url
         return service_type, None, config, "Vibemail"
 
     with get_db() as db:
@@ -136,10 +168,24 @@ def _build_service(request: GrokTaskCreate):
             raise HTTPException(status_code=400, detail=f"没有可用的 {service_type.value} 邮箱服务")
 
         config = (db_service.config or {}).copy()
-        if request.proxy and "proxy_url" not in config:
-            config["proxy_url"] = request.proxy
+        if proxy_url and "proxy_url" not in config:
+            config["proxy_url"] = proxy_url
         service_name = db_service.name
         return service_type, db_service.id, config, service_name
+
+
+def _resolve_grok_password(db, request: GrokTaskCreate) -> str:
+    """解析 Grok 注册密码：优先用户填写，再 grok.default_password，最后按 registration 长度随机。"""
+    password = (request.password or "").strip()
+    if password:
+        return password
+
+    default_password = _get_db_setting(db, "grok.default_password")
+    if default_password:
+        return default_password
+
+    settings = get_settings()
+    return generate_password(settings.registration_default_password_length)
 
 
 def _run_sync_grok_task(task_uuid: str, request: GrokTaskCreate, batch_id: str = "", log_prefix: str = ""):
@@ -161,18 +207,25 @@ def _run_sync_grok_task(task_uuid: str, request: GrokTaskCreate, batch_id: str =
 
             task_manager.update_status(task_uuid, "running")
 
-            service_type, resolved_service_id, config, service_name = _build_service(request)
+            resolved_proxy = request.proxy
+            proxy_id = None
+            if not resolved_proxy:
+                resolved_proxy, proxy_id = get_proxy_for_grok_registration(db)
+
+            resolved_password = _resolve_grok_password(db, request)
+
+            if resolved_proxy:
+                crud.update_registration_task(db, task_uuid, proxy=resolved_proxy)
+
+            service_type, resolved_service_id, config, service_name = _build_service(request, resolved_proxy)
             if resolved_service_id:
                 crud.update_registration_task(db, task_uuid, email_service_id=resolved_service_id)
 
             email_service = EmailServiceFactory.create(service_type, config, name=service_name)
             log_callback = task_manager.create_log_callback(task_uuid, prefix=log_prefix, batch_id=batch_id)
-            default_password_setting = crud.get_setting(db, "grok.default_password")
-            resolved_password = request.password or (default_password_setting.value if default_password_setting and default_password_setting.value else None)
-
             engine = GrokRegistrationEngine(
                 email_service=email_service,
-                proxy_url=request.proxy,
+                proxy_url=resolved_proxy,
                 password=resolved_password,
                 user_data_dir=request.user_data_dir,
                 cf_clearance=request.cf_clearance,
@@ -192,6 +245,10 @@ def _run_sync_grok_task(task_uuid: str, request: GrokTaskCreate, batch_id: str =
                     completed_at=datetime.utcnow(),
                     result=result.to_dict(),
                 )
+                if proxy_id:
+                    from ...web.routes.registration import update_proxy_usage
+
+                    update_proxy_usage(db, proxy_id)
                 task_manager.update_status(task_uuid, "completed", email=result.email)
             else:
                 crud.update_registration_task(
@@ -339,6 +396,23 @@ async def start_grok_batch(request: GrokBatchCreate, background_tasks: Backgroun
     }
     background_tasks.add_task(run_grok_batch, batch_id, task_uuids, request)
     return GrokBatchResponse(batch_id=batch_id, count=request.count, tasks=task_responses)
+
+
+@router.get("/defaults")
+async def get_grok_defaults():
+    """返回 Grok 表单可复用的默认配置。"""
+    with get_db() as db:
+        settings = get_settings()
+        default_password = _get_db_setting(db, "grok.default_password")
+        proxy, _ = get_proxy_for_grok_registration(db)
+
+        return {
+            "proxy": proxy,
+            "password_length": settings.registration_default_password_length,
+            "default_password": default_password,
+            "vibemail_user_jwt": _get_db_setting(db, "grok.vibemail_user_jwt"),
+            "vibemail_api": _get_db_setting(db, "grok.vibemail_api", "https://tmpmail.vibecodinghub.cloud"),
+        }
 
 
 @router.get("/tasks/{task_uuid}", response_model=GrokTaskResponse)
