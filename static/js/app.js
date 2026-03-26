@@ -121,6 +121,7 @@ const elements = {
     grokIntervalMax: document.getElementById('grok-interval-max'),
     grokPassword: document.getElementById('grok-password'),
     grokProxy: document.getElementById('grok-proxy'),
+    grokProxyHint: document.getElementById('grok-proxy-hint'),
     grokUserDataDir: document.getElementById('grok-user-data-dir'),
     grokUserAgent: document.getElementById('grok-user-agent'),
     grokCfClearance: document.getElementById('grok-cf-clearance'),
@@ -371,8 +372,10 @@ async function loadGrokDefaults() {
             } else {
                 elements.grokVibemailJwtHint.textContent = '未检测到 Vibemail JWT，可在下方手工填写以覆盖默认来源';
             }
-            if (!trimValue(elements.grokVibemailJwt.value) && hasJwt) {
-                elements.grokVibemailJwt.placeholder = `留空则复用默认 JWT（来源：${jwtSource}）`;
+            if (hasJwt) {
+                elements.grokVibemailJwt.placeholder = '留空则复用系统配置中的 Vibemail JWT';
+            } else if (!trimValue(elements.grokVibemailJwt.value)) {
+                elements.grokVibemailJwt.placeholder = '未检测到默认 JWT，可在此填写';
             }
         }
 
@@ -382,21 +385,29 @@ async function loadGrokDefaults() {
             } else {
                 elements.grokVibemailApiHint.textContent = '未检测到 API 配置，留空将自动使用默认地址';
             }
-            if (!trimValue(elements.grokVibemailApi.value) && hasApi) {
-                elements.grokVibemailApi.placeholder = `留空则复用默认 API（来源：${apiSource}）`;
+            if (hasApi) {
+                elements.grokVibemailApi.placeholder = '留空则复用系统配置中的 API 地址';
+            } else if (!trimValue(elements.grokVibemailApi.value)) {
+                elements.grokVibemailApi.placeholder = '未检测到默认 API，留空则使用 https://tmpmail.vibecodinghub.cloud';
             }
         }
 
-        if (!trimValue(elements.grokPassword.value) && defaults.default_password) {
-            elements.grokPassword.value = defaults.default_password;
+        if (!trimValue(elements.grokPassword.value) && defaults.password_length) {
+            elements.grokPassword.placeholder = defaults.default_password
+                ? `未填写则优先使用系统配置的默认密码`
+                : `未填写则自动生成 ${defaults.password_length} 位密码`;
         }
 
-        if (!trimValue(elements.grokPassword.value) && defaults.password_length) {
-            elements.grokPassword.placeholder = `未填写则自动生成 ${defaults.password_length} 位密码`;
+        if (elements.grokProxyHint) {
+            if (defaults.proxy) {
+                elements.grokProxyHint.textContent = `默认代理：${defaults.proxy}（留空自动分配）`;
+            } else {
+                elements.grokProxyHint.textContent = '留空将自动分配可用代理';
+            }
         }
 
         if (!trimValue(elements.grokProxy.value) && defaults.proxy) {
-            elements.grokProxy.value = defaults.proxy;
+            elements.grokProxy.placeholder = `留空自动使用代理：${defaults.proxy}`;
         }
     } catch (error) {
         console.error('加载 Grok 默认配置失败:', error);

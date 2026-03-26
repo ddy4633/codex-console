@@ -441,6 +441,7 @@
                                         <div class="form-group">
                                             <label for="grok-proxy">代理 URL</label>
                                             <input type="text" id="grok-proxy" placeholder="http://user:pass@host:port">
+                                            <div class="form-tip" id="grok-proxy-hint">留空将自动分配可用代理</div>
                                         </div>
 
                                         <div class="form-group">
@@ -491,7 +492,7 @@
                                         </button>
                                     </div>
                                 </form>
-                                <div class="form-tip">Grok 依赖浏览器执行，速度会明显慢于普通邮箱注册。这里复用的是本地脚本链路，不改注册核心逻辑。</div>
+                                    <div class="form-tip">Grok 优先走 HTTP 注册链路；如需可选 Cloudflare/Cookie 参数，将使用浏览器辅助执行。</div>
                             </div>
                         </div>
                     </div>

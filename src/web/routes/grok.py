@@ -19,7 +19,6 @@ from pydantic import BaseModel
 from ...config.constants import EmailServiceType
 from ...core.utils import generate_password
 from ...config.settings import get_settings
-from ...core.grok import GrokRegistrationEngine
 from ...database import crud
 from ...database.models import Account, EmailService as EmailServiceModel, RegistrationTask
 from ...database.session import get_db
@@ -299,27 +298,59 @@ def _run_sync_grok_task(task_uuid: str, request: GrokTaskCreate, batch_id: str =
 
             email_service = EmailServiceFactory.create(service_type, config, name=service_name)
             log_callback = task_manager.create_log_callback(task_uuid, prefix=log_prefix, batch_id=batch_id)
-            engine = GrokRegistrationEngine(
-                email_service=email_service,
-                proxy_url=resolved_proxy,
-                password=resolved_password,
-                user_data_dir=request.user_data_dir,
-                cf_clearance=request.cf_clearance,
-                cf_bm=request.cf_bm,
-                cf_cookie_header=request.cf_cookie_header,
-                user_agent=request.user_agent,
-                callback_logger=log_callback,
+            engine, engine_type = _build_grok_engine(
+                email_service,
+                request=request,
+                resolved_proxy=resolved_proxy,
+                resolved_password=resolved_password,
+                log_callback=log_callback,
                 task_uuid=task_uuid,
             )
-            result = engine.run()
 
-            if result.success:
+            try:
+                result = _run_grok_engine(engine, task_uuid)
+            except Exception as run_exc:
+                logger.warning(
+                    "Grok 任务 %s 引擎执行失败（%s）：%s，准备回退执行路径",
+                    task_uuid,
+                    engine_type,
+                    run_exc,
+                )
+                if engine_type == "http" and not _has_grok_advanced_params(request):
+                    fallback_engine, fallback_type = _build_grok_engine(
+                        email_service=email_service,
+                        request=request,
+                        resolved_proxy=resolved_proxy,
+                        resolved_password=resolved_password,
+                        log_callback=log_callback,
+                        task_uuid=task_uuid,
+                        force_browser=True,
+                    )
+                    try:
+                        result = _run_grok_engine(fallback_engine, task_uuid)
+                        engine_type = fallback_type
+                    except Exception as fallback_exc:
+                        raise RuntimeError(f"HTTP 与浏览器引擎均执行失败: {fallback_exc}") from fallback_exc
+                else:
+                    raise
+
+            if hasattr(result, "to_dict"):
+                result_dict = result.to_dict()
+            elif isinstance(result, dict):
+                result_dict = result
+            else:
+                result_dict = {
+                    "success": False,
+                    "error_message": "Grok 注册返回结果格式不正确",
+                }
+
+            if result_dict.get("success"):
                 crud.update_registration_task(
                     db,
                     task_uuid,
                     status="completed",
                     completed_at=datetime.utcnow(),
-                    result=result.to_dict(),
+                    result=result_dict,
                 )
                 if proxy_id:
                     from ...web.routes.registration import update_proxy_usage
@@ -332,10 +363,15 @@ def _run_sync_grok_task(task_uuid: str, request: GrokTaskCreate, batch_id: str =
                     task_uuid,
                     status="failed",
                     completed_at=datetime.utcnow(),
-                    error_message=result.error_message,
-                    result=result.to_dict(),
+                    error_message=result_dict.get("error_message", "Grok 注册失败"),
+                    result=result_dict,
                 )
-                task_manager.update_status(task_uuid, "failed", error=result.error_message)
+                task_manager.update_status(
+                    task_uuid,
+                    "failed",
+                    email=result_dict.get("email", ""),
+                    error=result_dict.get("error_message", "Grok 注册失败"),
+                )
         except HTTPException as exc:
             logger.error("Grok 任务配置错误: %s", exc.detail)
             crud.update_registration_task(
@@ -425,6 +461,107 @@ async def run_grok_batch(batch_id: str, task_uuids: List[str], request: GrokBatc
         finished=True,
     )
     task_manager.add_batch_log(batch_id, f"[系统] Grok 批量任务结束，成功 {success}，失败 {failed}")
+
+
+def _has_grok_advanced_params(request: GrokTaskCreate) -> bool:
+    """判断是否填写了需要切换到浏览器路径的高级参数。"""
+    return any(
+        [
+            (request.user_data_dir or "").strip(),
+            (request.user_agent or "").strip(),
+            (request.cf_clearance or "").strip(),
+            (request.cf_bm or "").strip(),
+            (request.cf_cookie_header or "").strip(),
+        ]
+    )
+
+
+def _build_grok_engine(
+    email_service,
+    request: GrokTaskCreate,
+    resolved_proxy: Optional[str],
+    resolved_password: str,
+    log_callback,
+    task_uuid: str,
+    force_browser: bool = False,
+):
+    """根据请求参数构建 Grok 引擎实例（支持 HTTP 与浏览器双路）。"""
+
+    use_http_by_default = not _has_grok_advanced_params(request) and not force_browser
+
+    if use_http_by_default:
+        try:
+            from ...core.grok_register import GrokRegistrationEngine as HttpGrokEngine
+
+            logger.info(
+                "Grok 任务 %s 使用纯 HTTP 引擎（无高级浏览器参数）",
+                task_uuid,
+            )
+            return HttpGrokEngine(
+                email_service=email_service,
+                proxy_url=resolved_proxy,
+                password=resolved_password,
+                user_data_dir=request.user_data_dir,
+                user_agent=(request.user_agent or "").strip(),
+                cf_clearance=(request.cf_clearance or "").strip(),
+                cf_bm=(request.cf_bm or "").strip(),
+                cf_cookie_header=(request.cf_cookie_header or "").strip(),
+                callback_logger=log_callback,
+                task_uuid=task_uuid,
+            ), "http"
+        except Exception as exc:
+            logger.warning(
+                "Grok 任务 %s HTTP 引擎初始化失败，准备回退浏览器引擎：%s",
+                task_uuid,
+                exc,
+            )
+
+    try:
+        from ...core.grok import GrokRegistrationEngine as BrowserGrokEngine
+
+        logger.info("Grok 任务 %s 使用浏览器引擎", task_uuid)
+        return BrowserGrokEngine(
+            email_service=email_service,
+            proxy_url=resolved_proxy,
+            password=resolved_password,
+            user_data_dir=(request.user_data_dir or "").strip(),
+            cf_clearance=(request.cf_clearance or "").strip(),
+            cf_bm=(request.cf_bm or "").strip(),
+            cf_cookie_header=(request.cf_cookie_header or "").strip(),
+            user_agent=(request.user_agent or "").strip(),
+            callback_logger=log_callback,
+            task_uuid=task_uuid,
+        ), "browser"
+    except Exception as browser_exc:
+        logger.warning(
+            "Grok 任务 %s 默认浏览器引擎创建失败，尝试备用浏览器实现：%s",
+            task_uuid,
+            browser_exc,
+        )
+        from ...core.grok_browser_register import GrokRegistrationEngine as BackupBrowserGrokEngine
+
+        logger.info("Grok 任务 %s 使用备用浏览器引擎", task_uuid)
+        return BackupBrowserGrokEngine(
+            email_service=email_service,
+            proxy_url=resolved_proxy,
+            password=resolved_password,
+            user_data_dir=(request.user_data_dir or "").strip(),
+            cf_clearance=(request.cf_clearance or "").strip(),
+            cf_bm=(request.cf_bm or "").strip(),
+            cf_cookie_header=(request.cf_cookie_header or "").strip(),
+            user_agent=(request.user_agent or "").strip(),
+            callback_logger=log_callback,
+            task_uuid=task_uuid,
+        ), "browser"
+
+
+def _run_grok_engine(engine, task_uuid: str):
+    """兼容 run/register 两套 Grok 引擎接口。"""
+    if hasattr(engine, "run"):
+        return engine.run()
+    if hasattr(engine, "register"):
+        return engine.register()
+    raise RuntimeError(f"Grok 任务 {task_uuid} 引擎不支持 run/register 接口")
 
 
 @router.post("/start", response_model=GrokTaskResponse)
