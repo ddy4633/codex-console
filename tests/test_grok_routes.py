@@ -77,3 +77,38 @@ def test_recent_grok_accounts_only_returns_grok(monkeypatch):
     assert len(result["accounts"]) == 1
     assert result["accounts"][0]["email"] == "grok@example.com"
     assert result["accounts"][0]["source"] == "grok_register"
+
+
+def test_get_grok_defaults_uses_database_and_global_config(monkeypatch):
+    class DummySetting:
+        def __init__(self, value):
+            self.value = value
+
+    settings = type("Settings", (), {"registration_default_password_length": 16})
+
+    @contextmanager
+    def fake_get_db():
+        yield None
+
+    monkeypatch.setattr(grok_routes, "get_db", fake_get_db)
+    monkeypatch.setattr(grok_routes, "get_settings", lambda: settings)
+    monkeypatch.setattr(grok_routes, "get_proxy_for_grok_registration", lambda _db: ("http://127.0.0.1:7890", None))
+
+    values = {
+        "grok.default_password": "db-password",
+        "grok.vibemail_user_jwt": "jwt-token",
+        "grok.vibemail_api": "https://tmpmail.example.com",
+    }
+
+    def _fake_setting(_db, key, default=""):
+        return values.get(key, default)
+
+    monkeypatch.setattr(grok_routes, "_get_db_setting", lambda _, key, default="": _fake_setting(None, key, default))
+
+    result = __import__("asyncio").run(grok_routes.get_grok_defaults())
+
+    assert result["proxy"] == "http://127.0.0.1:7890"
+    assert result["default_password"] == "db-password"
+    assert result["vibemail_user_jwt"] == "jwt-token"
+    assert result["vibemail_api"] == "https://tmpmail.example.com"
+    assert result["password_length"] == 16
