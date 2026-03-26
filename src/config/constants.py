@@ -38,7 +38,7 @@ class EmailServiceType(str, Enum):
     DUCK_MAIL = "duck_mail"
     FREEMAIL = "freemail"
     IMAP_MAIL = "imap_mail"
-    VIBEMAIL = "vibemail"
+    VIBEMAIL = "vibemail"  # Vibemail 接码（用于 Grok/xAI 注册）
 
 
 # ============================================================================
@@ -72,6 +72,16 @@ OPENAI_API_ENDPOINTS = {
     "select_workspace": "https://auth.openai.com/api/accounts/workspace/select",
 }
 
+# xAI/Grok API 端点
+XAI_API_ENDPOINTS = {
+    "signup":       "https://accounts.x.ai/api/v1/auth/signup/email",
+    "verify_otp":   "https://accounts.x.ai/api/v1/auth/signup/email/verify",
+    "complete":     "https://accounts.x.ai/api/v1/auth/signup/complete",
+    "login":        "https://accounts.x.ai/api/v1/auth/login/email",
+    "login_verify": "https://accounts.x.ai/api/v1/auth/login/email/verify",
+    "grok_home":    "https://grok.com",
+}
+
 # OpenAI 页面类型（用于判断账号状态）
 OPENAI_PAGE_TYPES = {
     "EMAIL_OTP_VERIFICATION": "email_otp_verification",  # 已注册账号，需要 OTP 验证
@@ -79,8 +89,16 @@ OPENAI_PAGE_TYPES = {
     "LOGIN_PASSWORD": "login_password",  # 登录流程，需要输入密码
 }
 
-# xAI/Grok OTP 兼容 6 位数字和 ABC-123 两种格式。
+# xAI/Grok OTP 匹配（6位数字 或 ABC-123 格式，统一去横线后使用）
 XAI_OTP_CODE_PATTERN = r"([A-Z]{3}-[A-Z0-9]{3})|(\b\d{6}\b)"
+
+# xAI/Grok 验证邮件发件人关键词
+XAI_EMAIL_SENDERS = [
+    "noreply@x.ai",
+    "@x.ai",
+    "grok",
+    "xai",
+]
 
 # ============================================================================
 # 邮箱服务相关常量
@@ -272,9 +290,10 @@ DEFAULT_SETTINGS = [
     ("registration.max_retries", "3", "最大重试次数", "registration"),
     ("registration.timeout", "120", "超时时间（秒）", "registration"),
     ("registration.default_password_length", "12", "默认密码长度", "registration"),
+    # Grok/xAI 配置
     ("grok.vibemail_api", "https://tmpmail.vibecodinghub.cloud", "Vibemail API 地址", "grok"),
-    ("grok.vibemail_user_jwt", "", "Vibemail 用户 JWT", "grok"),
-    ("grok.default_password", "", "Grok 默认注册密码", "grok"),
+    ("grok.vibemail_user_jwt", "", "Vibemail 用户 JWT（用于创建临时邮箱）", "grok"),
+    ("grok.default_password", "", "Grok 注册默认密码（空=随机生成）", "grok"),
     ("webui.host", "0.0.0.0", "Web UI 监听主机", "webui"),
     ("webui.port", "8000", "Web UI 监听端口", "webui"),
     ("webui.debug", "true", "调试模式", "webui"),

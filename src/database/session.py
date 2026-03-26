@@ -110,6 +110,9 @@ class DatabaseSessionManager:
             ("accounts", "subscription_type", "VARCHAR(20)"),
             ("accounts", "subscription_at", "DATETIME"),
             ("accounts", "cookies", "TEXT"),
+            ("accounts", "platform", "VARCHAR(20) DEFAULT 'openai'"),
+            ("accounts", "sso_token", "TEXT"),
+            ("accounts", "sso_rw_token", "TEXT"),
             ("proxies", "is_default", "BOOLEAN DEFAULT 0"),
         ]
 

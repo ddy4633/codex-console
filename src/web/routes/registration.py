@@ -1525,3 +1525,327 @@ async def cancel_outlook_batch(batch_id: str):
     task_manager.cancel_batch(batch_id)
 
     return {"success": True, "message": "批量任务取消请求已提交，正在让它们有序收工"}
+
+
+# ============================================================
+# Grok/xAI 注册端点
+# ============================================================
+
+class GrokRegistrationRequest(BaseModel):
+    """Grok 单次注册请求"""
+    proxy: Optional[str] = None
+    vibemail_user_jwt: Optional[str] = None   # 若空则从系统设置读取
+    vibemail_api: Optional[str] = None        # 若空则使用默认 vibemail API
+    password: Optional[str] = None
+    user_data_dir: Optional[str] = None
+    user_agent: Optional[str] = None
+    cf_clearance: Optional[str] = None
+    cf_bm: Optional[str] = None
+    cf_cookie: Optional[str] = None
+
+
+class GrokBatchRegistrationRequest(BaseModel):
+    """Grok 批量注册请求"""
+    count: int = 1
+    proxy: Optional[str] = None
+    vibemail_user_jwt: Optional[str] = None
+    vibemail_api: Optional[str] = None
+    password: Optional[str] = None
+    user_data_dir: Optional[str] = None
+    user_agent: Optional[str] = None
+    cf_clearance: Optional[str] = None
+    cf_bm: Optional[str] = None
+    cf_cookie: Optional[str] = None
+    interval_min: int = 5
+    interval_max: int = 30
+    concurrency: int = 1
+
+
+def _run_sync_grok_registration(
+    task_uuid: str,
+    proxy: Optional[str],
+    vibemail_user_jwt: str,
+    vibemail_api: Optional[str],
+    password: Optional[str],
+    user_data_dir: Optional[str],
+    user_agent: Optional[str],
+    cf_clearance: Optional[str],
+    cf_bm: Optional[str],
+    cf_cookie: Optional[str],
+    log_prefix: str = "",
+    batch_id: str = "",
+):
+    """在线程池中执行 Grok 注册"""
+    from ...core.grok_browser_register import GrokRegistrationEngine
+    from ...services.vibemail import VibemailService
+
+    with get_db() as db:
+        try:
+            if task_manager.is_cancelled(task_uuid):
+                return
+
+            crud.update_registration_task(
+                db, task_uuid,
+                status="running",
+                started_at=datetime.utcnow()
+            )
+            task_manager.update_status(task_uuid, "running")
+
+            # 确定代理
+            actual_proxy = proxy
+            proxy_id = None
+            if not actual_proxy:
+                actual_proxy, proxy_id = get_proxy_for_registration(db)
+
+            crud.update_registration_task(db, task_uuid, proxy=actual_proxy)
+
+            # 构建 Vibemail 配置
+            def _get_db_setting(key: str, default: str = "") -> str:
+                """Helper: 从 DB 读取 setting 字符串属性"""
+                s = crud.get_setting(db, key)
+                return s.value if s and s.value else default
+
+            jwt = vibemail_user_jwt or _get_db_setting("grok.vibemail_user_jwt")
+            api = vibemail_api or _get_db_setting("grok.vibemail_api", "https://tmpmail.vibecodinghub.cloud")
+            actual_password = (password or _get_db_setting("grok.default_password")).strip()
+
+            if not jwt:
+                raise ValueError("缺少 Vibemail JWT，请在系统设置中配置 grok.vibemail_user_jwt")
+
+            email_service = VibemailService(
+                config={"user_jwt": jwt, "api_base": api, "proxy_url": actual_proxy},
+            )
+
+            log_callback = task_manager.create_log_callback(task_uuid, prefix=log_prefix, batch_id=batch_id)
+
+            engine = GrokRegistrationEngine(
+                email_service=email_service,
+                proxy_url=actual_proxy,
+                password=actual_password,
+                user_data_dir=user_data_dir,
+                user_agent=user_agent,
+                cf_clearance=cf_clearance,
+                cf_bm=cf_bm,
+                cf_cookie_header=cf_cookie,
+                callback_logger=log_callback,
+                task_uuid=task_uuid,
+            )
+
+            result = engine.register()
+
+            if result.success:
+                update_proxy_usage(db, proxy_id)
+                crud.update_registration_task(
+                    db, task_uuid,
+                    status="completed",
+                    completed_at=datetime.utcnow(),
+                    result=result.to_dict()
+                )
+                task_manager.update_status(task_uuid, "completed", email=result.email)
+                logger.info(f"Grok 注册任务完成: {task_uuid}, 邮箱: {result.email}")
+            else:
+                crud.update_registration_task(
+                    db, task_uuid,
+                    status="failed",
+                    completed_at=datetime.utcnow(),
+                    error_message=result.error_message
+                )
+                task_manager.update_status(task_uuid, "failed", error=result.error_message)
+                logger.warning(f"Grok 注册失败: {task_uuid}, 原因: {result.error_message}")
+
+        except Exception as e:
+            logger.error(f"Grok 注册任务异常: {task_uuid}, 错误: {e}")
+            try:
+                crud.update_registration_task(
+                    db, task_uuid,
+                    status="failed",
+                    completed_at=datetime.utcnow(),
+                    error_message=str(e)
+                )
+                task_manager.update_status(task_uuid, "failed", error=str(e))
+            except Exception:
+                pass
+
+
+async def _run_grok_task_async(
+    task_uuid: str,
+    proxy: Optional[str],
+    vibemail_user_jwt: str,
+    vibemail_api: Optional[str],
+    password: Optional[str],
+    user_data_dir: Optional[str],
+    user_agent: Optional[str],
+    cf_clearance: Optional[str],
+    cf_bm: Optional[str],
+    cf_cookie: Optional[str],
+    log_prefix: str = "",
+    batch_id: str = "",
+):
+    """异步包装 Grok 注册同步任务"""
+    loop = task_manager.get_loop()
+    if loop is None:
+        loop = asyncio.get_event_loop()
+        task_manager.set_loop(loop)
+
+    task_manager.update_status(task_uuid, "pending")
+    task_manager.add_log(task_uuid, f"{log_prefix} [系统] Grok 注册任务 {task_uuid[:8]} 已加入队列")
+
+    try:
+        await loop.run_in_executor(
+            task_manager.executor,
+            _run_sync_grok_registration,
+            task_uuid,
+            proxy,
+            vibemail_user_jwt,
+            vibemail_api,
+            password,
+            user_data_dir,
+            user_agent,
+            cf_clearance,
+            cf_bm,
+            cf_cookie,
+            log_prefix,
+            batch_id,
+        )
+    except Exception as e:
+        logger.error(f"Grok 线程池执行异常: {task_uuid}, 错误: {e}")
+        task_manager.add_log(task_uuid, f"[错误] 线程池执行异常: {str(e)}")
+        task_manager.update_status(task_uuid, "failed", error=str(e))
+
+
+@router.post("/grok/register")
+async def create_grok_registration_task(
+    request: GrokRegistrationRequest,
+    background_tasks: BackgroundTasks,
+):
+    """创建单个 Grok 注册任务"""
+    task_uuid = str(uuid.uuid4())
+
+    with get_db() as db:
+        def _get_db_setting(key: str, default: str = "") -> str:
+            s = crud.get_setting(db, key)
+            return s.value if s and s.value else default
+
+        jwt = request.vibemail_user_jwt or _get_db_setting("grok.vibemail_user_jwt")
+        if not jwt:
+            raise HTTPException(
+                status_code=400,
+                detail="缺少 Vibemail JWT，请在系统设置中配置 grok.vibemail_user_jwt 或在请求中传入 vibemail_user_jwt"
+            )
+
+        task = crud.create_registration_task(
+            db,
+            task_uuid=task_uuid,
+            proxy=request.proxy,
+        )
+
+    background_tasks.add_task(
+        _run_grok_task_async,
+        task_uuid,
+        request.proxy,
+        jwt,
+        request.vibemail_api,
+        request.password,
+        request.user_data_dir,
+        request.user_agent,
+        request.cf_clearance,
+        request.cf_bm,
+        request.cf_cookie,
+        "",
+        "",
+    )
+
+    return {"task_uuid": task_uuid, "status": "pending", "message": "Grok 注册任务已创建"}
+
+
+@router.post("/grok/batch")
+async def create_grok_batch_registration(
+    request: GrokBatchRegistrationRequest,
+    background_tasks: BackgroundTasks,
+):
+    """批量创建 Grok 注册任务"""
+    batch_id = str(uuid.uuid4())
+    task_uuids = []
+
+    with get_db() as db:
+        def _get_db_setting(key: str, default: str = "") -> str:
+            s = crud.get_setting(db, key)
+            return s.value if s and s.value else default
+
+        jwt = request.vibemail_user_jwt or _get_db_setting("grok.vibemail_user_jwt")
+        if not jwt:
+            raise HTTPException(
+                status_code=400,
+                detail="缺少 Vibemail JWT，请在系统设置中配置 grok.vibemail_user_jwt"
+            )
+
+
+        for _ in range(request.count):
+            tuuid = str(uuid.uuid4())
+            crud.create_registration_task(db, task_uuid=tuuid, proxy=request.proxy)
+            task_uuids.append(tuuid)
+
+    task_manager.init_batch(batch_id, len(task_uuids))
+    batch_tasks[batch_id] = {
+        "total": len(task_uuids),
+        "completed": 0,
+        "success": 0,
+        "failed": 0,
+        "cancelled": False,
+        "task_uuids": task_uuids,
+        "current_index": 0,
+        "logs": [],
+        "finished": False,
+    }
+
+    async def _run_grok_batch():
+        semaphore = asyncio.Semaphore(request.concurrency)
+        counter_lock = asyncio.Lock()
+
+        async def _one(idx: int, tuuid: str):
+            prefix = f"[任务{idx + 1}]"
+            async with semaphore:
+                await _run_grok_task_async(
+                    tuuid,
+                    request.proxy,
+                    jwt,
+                    request.vibemail_api,
+                    request.password,
+                    request.user_data_dir,
+                    request.user_agent,
+                    request.cf_clearance,
+                    request.cf_bm,
+                    request.cf_cookie,
+                    log_prefix=prefix,
+                    batch_id=batch_id,
+                )
+            async with counter_lock:
+                batch_tasks[batch_id]["completed"] += 1
+                with get_db() as db2:
+                    t = crud.get_registration_task(db2, tuuid)
+                    if t and t.status == "completed":
+                        batch_tasks[batch_id]["success"] += 1
+                    else:
+                        batch_tasks[batch_id]["failed"] += 1
+
+        tasks_coros = []
+        for i, tuuid in enumerate(task_uuids):
+            tasks_coros.append(_one(i, tuuid))
+            if i < len(task_uuids) - 1:
+                await asyncio.sleep(
+                    random.randint(request.interval_min, request.interval_max)
+                )
+
+        await asyncio.gather(*tasks_coros, return_exceptions=True)
+        batch_tasks[batch_id]["finished"] = True
+        task_manager.update_batch_status(batch_id, status="completed", finished=True)
+
+    background_tasks.add_task(_run_grok_batch)
+
+    return {
+        "batch_id": batch_id,
+        "count": len(task_uuids),
+        "task_uuids": task_uuids,
+        "status": "pending",
+        "message": f"已创建 {len(task_uuids)} 个 Grok 注册任务",
+    }
