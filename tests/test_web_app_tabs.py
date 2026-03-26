@@ -27,6 +27,21 @@ def test_index_contains_openai_and_grok_tabs():
     assert 'id="registration-form"' in response.text
 
 
+def test_health_routes_support_get_and_head():
+    client = TestClient(create_app())
+
+    get_response = client.get("/healthz")
+    head_response = client.head("/healthz")
+    root_head_response = client.head("/")
+
+    assert get_response.status_code == 200
+    assert get_response.json() == {"status": "ok"}
+    assert head_response.status_code == 200
+    assert head_response.text == ""
+    assert root_head_response.status_code == 200
+    assert root_head_response.text == ""
+
+
 def test_grok_route_redirects_to_index_tab():
     client = TestClient(create_app())
     client.cookies.set("webui_auth", _auth_cookie_value())

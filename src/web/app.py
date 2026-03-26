@@ -15,7 +15,7 @@ from fastapi import FastAPI, Request, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from ..config.settings import get_settings
 from .routes import api_router
@@ -103,6 +103,19 @@ def create_app() -> FastAPI:
 
     def _redirect_to_login(request: Request) -> RedirectResponse:
         return RedirectResponse(url=f"/login?next={request.url.path}", status_code=302)
+
+    @app.api_route("/health", methods=["GET", "HEAD"])
+    @app.api_route("/healthz", methods=["GET", "HEAD"])
+    async def healthcheck(request: Request):
+        """公开健康检查，供反向代理和部署平台探活。"""
+        if request.method == "HEAD":
+            return Response(status_code=200)
+        return {"status": "ok"}
+
+    @app.head("/")
+    async def index_head():
+        """兼容使用 HEAD / 作为默认探针的部署平台。"""
+        return Response(status_code=200)
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request, next: Optional[str] = "/"):
